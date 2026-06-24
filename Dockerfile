@@ -15,6 +15,11 @@ FROM debian:stable AS builder
 ARG OPENLDAP_VERSION
 ARG OPENLDAP_SHA256
 
+# Fail a build step if any command in a pipe fails (e.g. curl in the
+# checksum-verify pipe below) instead of masking it with the last command's
+# exit code. Required by hadolint DL4006 and genuinely safer here.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
