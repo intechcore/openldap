@@ -16,6 +16,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - Initial data bootstrap from `/bootstrap` (`*.ldif`).
 - TLS via mounted certificates in `/container/certs`, with a self-signed
   fallback for dev/CI.
+- TLS certificate hot-reload without a restart: the `reload-tls` helper and an
+  opt-in cert watcher (`LDAP_TLS_WATCH`), plus a Let's Encrypt DNS-01 example
+  (certbot sidecar) in `examples/letsencrypt/`.
 - Pinned Symas package revision (`SYMAS_VERSION`); renovate tracks new 2.6
   releases and `make bump-openldap` resolves the matching package version.
 - CI: build + integration tests, hadolint/shellcheck lint, Trivy scan,

@@ -18,7 +18,7 @@ test: build
 	./tests/integration/test-integration.sh $(IMAGE_NAME):$(IMAGE_TAG)
 
 lint:
-	shellcheck entrypoint.sh tests/integration/*.sh
+	shellcheck entrypoint.sh reload-tls.sh tests/integration/*.sh
 	docker run --rm -i hadolint/hadolint < Dockerfile
 
 scan: build

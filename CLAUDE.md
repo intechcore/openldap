@@ -16,8 +16,12 @@ OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
   repo onto a slim Debian runtime. No source compile (keeps multi-arch fast).
 - `entrypoint.sh` — hybrid bootstrap. Env vars (osixia-compatible) drive
   first-boot config; `/schema` and `/bootstrap` LDIF cover the rest. Idempotent
-  across restarts (only bootstraps when the config volume is empty).
+  across restarts (only bootstraps when the config volume is empty). Also hosts
+  the opt-in TLS cert watcher (`LDAP_TLS_WATCH`).
+- `reload-tls.sh` → `/usr/local/bin/reload-tls` — re-reads slapd's TLS material
+  without a restart by re-asserting `olcTLS*` in `cn=config` (for renewals).
 - `schema/` — custom schemas baked into the image at `/schema`.
+- `examples/letsencrypt/` — certbot DNS-01 sidecar + auto-reload reference.
 - `tests/integration/` — `docker compose` + `test-integration.sh` smoke +
   end-to-end (auth, readonly, bootstrap, custom schema, TLS).
 - `.github/workflows/` — build+test, lint, security (Trivy), release.

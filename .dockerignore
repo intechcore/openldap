@@ -3,6 +3,7 @@
 .idea
 .vscode
 tests
+examples
 Makefile
 CLAUDE.md
 README.md

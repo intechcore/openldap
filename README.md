@@ -74,6 +74,8 @@ starts reuse the persisted `cn=config`.
 | `LDAP_TLS_CA_CRT_FILENAME` | `ca.crt` | CA cert filename |
 | `LDAP_TLS_DH_PARAM_FILENAME` | `dhparam.pem` | DH params filename |
 | `LDAP_TLS_VERIFY_CLIENT` | `demand` | `never`/`allow`/`try`/`demand` |
+| `LDAP_TLS_WATCH` | `false` | Watch the cert file and hot-reload slapd on renewal |
+| `LDAP_TLS_WATCH_INTERVAL` | `3600` | Cert-watch poll interval (seconds) |
 | `LDAP_LOG_LEVEL` | `256` | slapd log level |
 
 ### TLS
@@ -81,6 +83,20 @@ starts reuse the persisted `cn=config`.
 Mount certificates into `/container/certs` (filenames configurable via the
 variables above). If `LDAP_TLS=true` and no certificate is found, a self-signed
 cert is generated at startup — convenient for dev/CI, **not** for production.
+
+#### Renewals / Let's Encrypt
+
+slapd reads its TLS material once at startup and does not watch the files. Two
+ways to apply a renewed certificate without recreating the container:
+
+- **`reload-tls`** — run `docker exec <container> reload-tls` (e.g. from a
+  certbot deploy hook). It tells the running slapd to re-read its cert files.
+- **`LDAP_TLS_WATCH=true`** — the image polls the cert file every
+  `LDAP_TLS_WATCH_INTERVAL` seconds and reloads automatically when it changes,
+  so any external renewer just has to rewrite the mounted cert.
+
+A complete Let's Encrypt setup (certbot DNS-01 sidecar + auto-reload, no docker
+socket) is in [`examples/letsencrypt/`](examples/letsencrypt/).
 
 ## Directory layout
 

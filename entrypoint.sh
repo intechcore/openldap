@@ -24,6 +24,11 @@ LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
 LDAP_TLS_CA_CRT_FILENAME="${LDAP_TLS_CA_CRT_FILENAME:-ca.crt}"
 LDAP_TLS_DH_PARAM_FILENAME="${LDAP_TLS_DH_PARAM_FILENAME:-dhparam.pem}"
 LDAP_TLS_VERIFY_CLIENT="${LDAP_TLS_VERIFY_CLIENT:-demand}"
+# Opt-in: watch the TLS certificate for changes (e.g. an external Let's Encrypt
+# renewal rewriting the mounted cert) and hot-reload slapd's TLS context without
+# a restart. Off by default to avoid a background process.
+LDAP_TLS_WATCH="${LDAP_TLS_WATCH:-false}"
+LDAP_TLS_WATCH_INTERVAL="${LDAP_TLS_WATCH_INTERVAL:-3600}"
 LDAP_LOG_LEVEL="${LDAP_LOG_LEVEL:-256}"
 
 CERTS_DIR="${CERTS_DIR:-/container/certs}"
@@ -249,6 +254,30 @@ EOF
     done
 }
 
+# ─── TLS cert watcher ───────────────────────────────────────────────────────
+# Poll the configured certificate file; when its content changes (an external
+# renewal), ask the running slapd to re-read its TLS material. Decoupled from
+# whoever renews — no docker socket or cross-container signalling needed.
+watch_tls_certs() {
+    cert="${TLS_CRT:-}"
+    [ -n "$cert" ] || return 0
+    last="$(sha256sum "$cert" 2>/dev/null | awk '{print $1}')"
+    log "Watching $cert for renewals every ${LDAP_TLS_WATCH_INTERVAL}s"
+    while sleep "$LDAP_TLS_WATCH_INTERVAL"; do
+        [ -f "$cert" ] || continue
+        cur="$(sha256sum "$cert" 2>/dev/null | awk '{print $1}')"
+        [ -n "$cur" ] && [ "$cur" != "$last" ] || continue
+        log "TLS certificate change detected — reloading slapd TLS context"
+        if LDAP_ADMIN_PASSWORD="$LDAP_ADMIN_PASSWORD" \
+           LDAP_CONFIG_PASSWORD="$LDAP_CONFIG_PASSWORD" \
+           LDAPI_URL="$LDAPI_URL" reload-tls; then
+            last="$cur"
+        else
+            log "TLS reload failed; will retry on the next change"
+        fi
+    done
+}
+
 # ─── Main ───────────────────────────────────────────────────────────────────
 mkdir -p /run/slapd
 chown -R openldap:openldap /run/slapd
@@ -269,6 +298,12 @@ fi
 
 LISTEN="ldap:/// $LDAPI_URL"
 [ "$LDAP_TLS" = "true" ] && LISTEN="$LISTEN ldaps:///"
+
+# Start the optional cert watcher in the background before handing PID 1 to
+# slapd; it polls slapd over ldapi:// once that listener is up.
+if [ "$LDAP_TLS" = "true" ] && [ "$LDAP_TLS_WATCH" = "true" ]; then
+    watch_tls_certs &
+fi
 
 log "Starting slapd (listeners: $LISTEN)"
 # -d keeps slapd in the foreground as PID 1 and emits logs to stderr; the

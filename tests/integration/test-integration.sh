@@ -27,7 +27,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=15
+TOTAL=16
 
 cleanup() {
     echo ""
@@ -209,6 +209,27 @@ if $STARTTLS_OK && $LDAPS_OK; then
     pass "StartTLS (ldap://) and ldaps:// both work"
 else
     fail "TLS failed (StartTLS=$STARTTLS_OK, ldaps=$LDAPS_OK)"
+fi
+
+echo "[16/$TOTAL] reload-tls hot-swaps the cert without a restart"
+served_subject() {
+    docker exec "$CONTAINER" sh -c \
+        'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject' 2>/dev/null
+}
+SUBJ_BEFORE=$(served_subject)
+# Issue a fresh cert (new CN) at the paths slapd is configured to use, then ask
+# the running server to re-read it — simulating a Let's Encrypt renewal.
+docker exec "$CONTAINER" sh -c '
+    openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=renewed.example.test" \
+        -keyout /etc/ldap/certs/ldap.key -out /etc/ldap/certs/ldap.crt 2>/dev/null &&
+    cp /etc/ldap/certs/ldap.crt /etc/ldap/certs/ca.crt &&
+    chown openldap:openldap /etc/ldap/certs/ldap.crt /etc/ldap/certs/ldap.key /etc/ldap/certs/ca.crt' >/dev/null 2>&1
+docker exec "$CONTAINER" reload-tls >/dev/null 2>&1 || true
+SUBJ_AFTER=$(served_subject)
+if echo "$SUBJ_AFTER" | grep -q "CN=renewed.example.test" && [ "$SUBJ_BEFORE" != "$SUBJ_AFTER" ]; then
+    pass "renewed cert served after reload-tls (no restart)"
+else
+    fail "cert not reloaded (before='$SUBJ_BEFORE' after='$SUBJ_AFTER')"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

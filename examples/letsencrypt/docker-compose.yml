@@ -1,0 +1,64 @@
+# Let's Encrypt (DNS-01) for ghcr.io/intechcore/openldap.
+#
+# certbot issues/renews the certificate via the Cloudflare DNS plugin and a
+# deploy hook copies it into a volume shared with the LDAP server. slapd loads
+# the cert at startup; the in-image watcher (LDAP_TLS_WATCH=true) hot-reloads it
+# after each renewal — no restart, no docker socket, no cross-container signal.
+#
+# Cloudflare is just the example provider; swap the certbot image + ini for any
+# DNS-01 plugin (route53, google, digitalocean, …). See README.md for setup and
+# the one-time initial issuance step.
+
+services:
+  certbot:
+    image: certbot/dns-cloudflare:latest
+    container_name: openldap-certbot
+    restart: unless-stopped
+    volumes:
+      - le:/etc/letsencrypt                       # certbot's own state
+      - certs:/certs                              # shared, openldap-readable copy
+      - ./cloudflare.ini:/etc/cloudflare.ini:ro
+      - ./deploy-hook.sh:/deploy-hook.sh:ro
+    # Attempt renewal twice a day; certbot is a no-op until ~30 days to expiry.
+    # The deploy hook stored from the initial `certonly` run (see README) runs
+    # automatically whenever the cert is actually renewed.
+    entrypoint: /bin/sh
+    command: >
+      -c 'trap exit TERM;
+          while :; do
+            certbot renew --quiet;
+            sleep 12h & wait $${!};
+          done'
+
+  openldap:
+    image: ghcr.io/intechcore/openldap:2.6.13
+    container_name: openldap
+    restart: unless-stopped
+    depends_on: [certbot]
+    environment:
+      LDAP_ORGANISATION: "Intechcore GmbH"
+      LDAP_DOMAIN: "intechcore.online"
+      LDAP_ADMIN_PASSWORD: "change-me"
+      LDAP_CONFIG_PASSWORD: "change-me-too"
+      LDAP_TLS: "true"
+      # The deploy hook writes the cert into /container/certs (the default
+      # CERTS_DIR) under Let's Encrypt's filenames.
+      LDAP_TLS_CRT_FILENAME: "fullchain.pem"
+      LDAP_TLS_KEY_FILENAME: "privkey.pem"
+      LDAP_TLS_CA_CRT_FILENAME: "chain.pem"
+      # Hot-reload slapd's TLS context when certbot rewrites the cert.
+      LDAP_TLS_WATCH: "true"
+      LDAP_TLS_WATCH_INTERVAL: "3600"
+    ports:
+      - "389:389"
+      - "636:636"
+    volumes:
+      - certs:/container/certs:ro
+      - openldap-config:/etc/ldap/slapd.d
+      - openldap-data:/var/lib/ldap
+
+volumes:
+  le:
+  certs:
+  openldap-config:
+  openldap-data:

@@ -1,0 +1,7 @@
+# Cloudflare API credentials for certbot's DNS-01 challenge.
+# Copy to cloudflare.ini and `chmod 600 cloudflare.ini`.
+#
+# Create a scoped API token (not the global key): Cloudflare dashboard →
+# My Profile → API Tokens → Create Token → "Edit zone DNS", restricted to the
+# zone you issue certificates for. Minimum permission: Zone.DNS:Edit.
+dns_cloudflare_api_token = your-scoped-cloudflare-api-token

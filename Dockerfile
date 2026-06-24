@@ -62,7 +62,8 @@ RUN mkdir -p /container/certs /schema /bootstrap /run/slapd \
     chown -R openldap:openldap /var/lib/ldap /etc/ldap/slapd.d /run/slapd /etc/ldap/certs
 
 COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY reload-tls.sh /usr/local/bin/reload-tls
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/reload-tls
 
 # Custom schemas baked into the image (also overridable by mounting /schema).
 COPY schema/ /schema/
