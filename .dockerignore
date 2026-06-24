@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.vscode
+tests
+Makefile
+CLAUDE.md
+README.md
+CHANGELOG.md
+MIGRATION.md
+LICENSE
+renovate.json
+.DS_Store

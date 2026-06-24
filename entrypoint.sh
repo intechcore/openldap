@@ -1,0 +1,275 @@
+#!/bin/sh
+# Hybrid OpenLDAP bootstrap entrypoint.
+#
+# Drop-in spirit of osixia/openldap: the same env vars drive the initial setup
+# (domain, organisation, admin/config passwords, readonly user, TLS), while
+# anything beyond that is expressed as plain LDIF mounted at /schema and
+# /bootstrap. First boot builds cn=config from scratch and loads the data;
+# every subsequent boot just starts slapd against the existing volumes.
+set -e
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [Entrypoint] $1"; }
+
+# ─── Env contract (compatible subset of osixia/openldap) ────────────────────
+LDAP_ORGANISATION="${LDAP_ORGANISATION:-Example Inc.}"
+LDAP_DOMAIN="${LDAP_DOMAIN:-example.org}"
+LDAP_ADMIN_PASSWORD="${LDAP_ADMIN_PASSWORD:-admin}"
+LDAP_CONFIG_PASSWORD="${LDAP_CONFIG_PASSWORD:-$LDAP_ADMIN_PASSWORD}"
+LDAP_READONLY_USER="${LDAP_READONLY_USER:-false}"
+LDAP_READONLY_USER_USERNAME="${LDAP_READONLY_USER_USERNAME:-readonly}"
+LDAP_READONLY_USER_PASSWORD="${LDAP_READONLY_USER_PASSWORD:-readonly}"
+LDAP_TLS="${LDAP_TLS:-false}"
+LDAP_TLS_CRT_FILENAME="${LDAP_TLS_CRT_FILENAME:-ldap.crt}"
+LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
+LDAP_TLS_CA_CRT_FILENAME="${LDAP_TLS_CA_CRT_FILENAME:-ca.crt}"
+LDAP_TLS_DH_PARAM_FILENAME="${LDAP_TLS_DH_PARAM_FILENAME:-dhparam.pem}"
+LDAP_TLS_VERIFY_CLIENT="${LDAP_TLS_VERIFY_CLIENT:-demand}"
+LDAP_LOG_LEVEL="${LDAP_LOG_LEVEL:-256}"
+
+CERTS_DIR="${CERTS_DIR:-/container/certs}"
+SCHEMA_DIR="${SCHEMA_DIR:-/schema}"
+BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-/bootstrap}"
+CONFIG_DIR=/etc/ldap/slapd.d
+DATA_DIR=/var/lib/ldap
+# Stock schema + loadable overlay modules shipped by the source build.
+SCHEMA_BASE="${SCHEMA_BASE:-/opt/openldap/etc/openldap/schema}"
+MODULE_PATH="${MODULE_PATH:-/opt/openldap/libexec/openldap}"
+
+# Local ldapi:// socket with an explicit path so server and client always agree
+# regardless of the compiled-in default.
+LDAPI_URL="ldapi://%2Frun%2Fslapd%2Fldapi"
+
+# Derive the base DN from the domain: intechcore.online -> dc=intechcore,dc=online
+LDAP_BASE_DN="${LDAP_BASE_DN:-dc=$(echo "$LDAP_DOMAIN" | sed 's/\./,dc=/g')}"
+
+# ─── TLS material ───────────────────────────────────────────────────────────
+# Prefer mounted certs in $CERTS_DIR; fall back to self-signed (handy for
+# dev/CI). For persistent TLS in production, always mount real certificates.
+setup_tls() {
+    [ "$LDAP_TLS" = "true" ] || return 0
+
+    TLS_CRT="$CERTS_DIR/$LDAP_TLS_CRT_FILENAME"
+    TLS_KEY="$CERTS_DIR/$LDAP_TLS_KEY_FILENAME"
+    TLS_CA="$CERTS_DIR/$LDAP_TLS_CA_CRT_FILENAME"
+    TLS_DH="$CERTS_DIR/$LDAP_TLS_DH_PARAM_FILENAME"
+
+    if [ ! -f "$TLS_CRT" ] || [ ! -f "$TLS_KEY" ]; then
+        log "TLS enabled but no certificate found in $CERTS_DIR — generating self-signed"
+        GEN=/etc/ldap/certs
+        mkdir -p "$GEN"
+        CN="$(hostname -f 2>/dev/null || echo ldap)"
+        openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
+            -subj "/CN=$CN" \
+            -keyout "$GEN/ldap.key" -out "$GEN/ldap.crt" 2>/dev/null
+        cp "$GEN/ldap.crt" "$GEN/ca.crt"
+        openssl dhparam -out "$GEN/dhparam.pem" 2048 2>/dev/null
+        TLS_CRT="$GEN/ldap.crt"; TLS_KEY="$GEN/ldap.key"
+        TLS_CA="$GEN/ca.crt";   TLS_DH="$GEN/dhparam.pem"
+        chown -R openldap:openldap "$GEN"
+    else
+        log "Using mounted TLS certificates from $CERTS_DIR"
+    fi
+}
+
+# ─── First-run config generation ────────────────────────────────────────────
+# A slapd.conf is the most compact way to express the whole tree; slaptest then
+# converts it into the modern cn=config (slapd.d) layout.
+bootstrap_config() {
+    log "Bootstrapping cn=config for base DN '$LDAP_BASE_DN'"
+    admin_hash="$(slappasswd -s "$LDAP_ADMIN_PASSWORD")"
+    config_hash="$(slappasswd -s "$LDAP_CONFIG_PASSWORD")"
+
+    conf="$(mktemp)"
+    {
+        for s in core cosine inetorgperson nis; do
+            echo "include $SCHEMA_BASE/$s.schema"
+        done
+        for f in "$SCHEMA_DIR"/*.schema; do
+            [ -f "$f" ] && echo "include $f"
+        done
+        echo "pidfile /run/slapd/slapd.pid"
+        echo "argsfile /run/slapd/slapd.args"
+        # mdb is built static; modulepath only matters if an overlay LDIF is
+        # loaded later (overlays are shipped as loadable modules).
+        echo "modulepath $MODULE_PATH"
+        if [ "$LDAP_TLS" = "true" ]; then
+            echo "TLSCACertificateFile $TLS_CA"
+            echo "TLSCertificateFile $TLS_CRT"
+            echo "TLSCertificateKeyFile $TLS_KEY"
+            [ -f "$TLS_DH" ] && echo "TLSDHParamFile $TLS_DH"
+            echo "TLSVerifyClient $LDAP_TLS_VERIFY_CLIENT"
+        fi
+        cat <<EOF
+loglevel $LDAP_LOG_LEVEL
+
+database config
+rootdn "cn=admin,cn=config"
+rootpw $config_hash
+access to *
+  by dn.exact="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" manage
+  by * break
+
+database monitor
+
+database mdb
+suffix "$LDAP_BASE_DN"
+rootdn "cn=admin,$LDAP_BASE_DN"
+rootpw $admin_hash
+directory $DATA_DIR
+maxsize 1073741824
+index objectClass eq
+index cn,sn,uid,mail eq,sub
+index uidNumber,gidNumber,memberUid eq
+index member eq
+
+access to attrs=userPassword,shadowLastChange
+  by self write
+  by anonymous auth
+  by dn.exact="cn=$LDAP_READONLY_USER_USERNAME,$LDAP_BASE_DN" read
+  by * none
+access to *
+  by dn.exact="cn=$LDAP_READONLY_USER_USERNAME,$LDAP_BASE_DN" read
+  by self write
+  by users read
+  by * none
+EOF
+    } > "$conf"
+
+    rm -rf "${CONFIG_DIR:?}/"*
+    mkdir -p "$CONFIG_DIR" "$DATA_DIR" /run/slapd
+
+    # Validate config/schema syntax first (-u is a dry run: it checks but writes
+    # nothing).
+    if ! out="$(slaptest -u -f "$conf" -F "$CONFIG_DIR" 2>&1)"; then
+        log "ERROR: generated slapd config is invalid:"
+        echo "$out" | sed 's/^/    /'
+        log "--- generated slapd.conf ---"
+        sed 's/^/    /' "$conf"
+        exit 1
+    fi
+
+    # Now actually write the cn=config tree. Without -u, slaptest also runs the
+    # backend startup test and exits non-zero because the mdb database does not
+    # exist yet ("Restore from backup!") — that is expected on a cold volume and
+    # harmless: the conversion is written before that check runs, and the real
+    # slapd creates the database on first start. So ignore the exit code and
+    # instead confirm the config was produced.
+    slaptest -f "$conf" -F "$CONFIG_DIR" >/dev/null 2>&1 || true
+    if [ ! -f "$CONFIG_DIR/cn=config.ldif" ] || [ -z "$(ls -A "$CONFIG_DIR/cn=config" 2>/dev/null)" ]; then
+        log "ERROR: slaptest did not produce a cn=config tree"
+        exit 1
+    fi
+    rm -f "$conf"
+    chown -R openldap:openldap "$CONFIG_DIR" "$DATA_DIR" /run/slapd
+}
+
+# ─── First-run data load ────────────────────────────────────────────────────
+# Brings slapd up on the local socket only, loads schema LDIFs, the base tree,
+# the readonly account and any user bootstrap LDIF, then shuts it back down so
+# the real foreground slapd can take over with the full listener set.
+bootstrap_data() {
+    # The temporary slapd listens on a PRIVATE socket so nothing answers the
+    # public ldapi:// (used by the healthcheck and clients) until the real
+    # foreground slapd is up — this avoids a readiness race during the handover.
+    boot_ldapi="ldapi://%2Frun%2Fslapd%2Fldapi-bootstrap"
+
+    log "Starting temporary slapd for data load"
+    slapd -h "$boot_ldapi" -u openldap -g openldap -F "$CONFIG_DIR"
+
+    ok=false
+    for _ in $(seq 1 30); do
+        if ldapsearch -x -H "$boot_ldapi" -b "" -s base >/dev/null 2>&1; then
+            ok=true; break
+        fi
+        sleep 0.3
+    done
+    $ok || { log "ERROR: temporary slapd did not come up"; exit 1; }
+
+    # Custom schema in cn=config LDIF form (objectClass: olcSchemaConfig),
+    # written under the config rootdn.
+    for f in "$SCHEMA_DIR"/*.ldif; do
+        [ -f "$f" ] || continue
+        log "Loading schema LDIF $f"
+        ldapadd -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" -f "$f" >/dev/null 2>&1 \
+            || log "  (schema $f already present or partially applied)"
+    done
+
+    # Base tree + standard OUs.
+    if ! ldapsearch -x -H "$boot_ldapi" -D "cn=admin,$LDAP_BASE_DN" -w "$LDAP_ADMIN_PASSWORD" -b "$LDAP_BASE_DN" -s base >/dev/null 2>&1; then
+        dc="$(echo "$LDAP_BASE_DN" | sed -n 's/^dc=\([^,]*\).*/\1/p')"
+        log "Creating base entry $LDAP_BASE_DN and default OUs"
+        ldapadd -x -H "$boot_ldapi" -D "cn=admin,$LDAP_BASE_DN" -w "$LDAP_ADMIN_PASSWORD" >/dev/null <<EOF
+dn: $LDAP_BASE_DN
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: $LDAP_ORGANISATION
+dc: $dc
+
+dn: ou=people,$LDAP_BASE_DN
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,$LDAP_BASE_DN
+objectClass: organizationalUnit
+ou: groups
+EOF
+    fi
+
+    # Read-only bind account.
+    if [ "$LDAP_READONLY_USER" = "true" ]; then
+        ro_hash="$(slappasswd -s "$LDAP_READONLY_USER_PASSWORD")"
+        log "Creating readonly user cn=$LDAP_READONLY_USER_USERNAME"
+        ldapadd -x -H "$boot_ldapi" -D "cn=admin,$LDAP_BASE_DN" -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1 <<EOF || true
+dn: cn=$LDAP_READONLY_USER_USERNAME,$LDAP_BASE_DN
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: $LDAP_READONLY_USER_USERNAME
+description: Read-only bind account
+userPassword: $ro_hash
+EOF
+    fi
+
+    # User-supplied bootstrap data. -c keeps going past entries that already
+    # exist so the LDIF is effectively idempotent across volume restores.
+    for f in "$BOOTSTRAP_DIR"/*.ldif; do
+        [ -f "$f" ] || continue
+        log "Applying bootstrap LDIF $f"
+        ldapadd -c -x -H "$boot_ldapi" -D "cn=admin,$LDAP_BASE_DN" -w "$LDAP_ADMIN_PASSWORD" -f "$f" >/dev/null 2>&1 \
+            || log "  (some entries in $f already existed and were skipped)"
+    done
+
+    log "Stopping temporary slapd"
+    pid="$(cat /run/slapd/slapd.pid 2>/dev/null || true)"
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+        [ -e /run/slapd/slapd.pid ] || break
+        sleep 0.3
+    done
+}
+
+# ─── Main ───────────────────────────────────────────────────────────────────
+mkdir -p /run/slapd
+chown -R openldap:openldap /run/slapd
+
+setup_tls
+
+if [ -f "$DATA_DIR/data.mdb" ] && [ -n "$(ls -A "$CONFIG_DIR" 2>/dev/null)" ]; then
+    log "Existing database detected — skipping bootstrap"
+else
+    bootstrap_config
+    bootstrap_data
+fi
+
+# If the user overrode CMD with something other than slapd, just run it.
+if [ "$1" != "slapd" ]; then
+    exec "$@"
+fi
+
+LISTEN="ldap:/// $LDAPI_URL"
+[ "$LDAP_TLS" = "true" ] && LISTEN="$LISTEN ldaps:///"
+
+log "Starting slapd (listeners: $LISTEN)"
+# -d keeps slapd in the foreground as PID 1 and emits logs to stderr; the
+# numeric value doubles as the log level.
+exec slapd -h "$LISTEN" -u openldap -g openldap -F "$CONFIG_DIR" -d "$LDAP_LOG_LEVEL"

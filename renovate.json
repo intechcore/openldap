@@ -1,0 +1,48 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "automerge": true,
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "customDatasources": {
+    "openldap-eol": {
+      "defaultRegistryUrlTemplate": "https://endoflife.date/api/openldap.json",
+      "format": "json",
+      "transformTemplates": [
+        "{ \"releases\": [ { \"version\": $[cycle=\"2.6\"].latest } ] }"
+      ]
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "OpenLDAP source version pin (Dockerfile / Makefile / README)",
+      "managerFilePatterns": [
+        "/^Dockerfile$/",
+        "/^Makefile$/",
+        "/^README\\.md$/"
+      ],
+      "matchStrings": [
+        "ARG OPENLDAP_VERSION=(?<currentValue>\\S+)",
+        "# renovate: openldap\\nOPENLDAP_VERSION \\?= (?<currentValue>\\S+)",
+        "# renovate: openldap\\n.*?openldap:(?<currentValue>[\\d.]+)"
+      ],
+      "depNameTemplate": "openldap",
+      "datasourceTemplate": "custom.openldap-eol"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "OpenLDAP bumps need the tarball checksum refreshed (make bump-openldap), so do not automerge — CI fails the PR until the SHA256 is updated.",
+      "matchDatasources": ["custom.openldap-eol"],
+      "groupName": "openldap version",
+      "automerge": false
+    },
+    {
+      "description": "Disable updates for debian:stable / debian:stable-slim (floating tag, always current)",
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["debian"],
+      "enabled": false
+    }
+  ]
+}

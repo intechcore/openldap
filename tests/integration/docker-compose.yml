@@ -1,0 +1,21 @@
+services:
+  openldap:
+    image: ${IMAGE_NAME:-openldap}:${IMAGE_TAG:-2.6.13}
+    container_name: openldap-integration-test
+    environment:
+      LDAP_ORGANISATION: "Example Test Org"
+      LDAP_DOMAIN: "example.test"
+      LDAP_ADMIN_PASSWORD: "adminpw"
+      LDAP_CONFIG_PASSWORD: "configpw"
+      LDAP_READONLY_USER: "true"
+      LDAP_READONLY_USER_USERNAME: "readonly"
+      LDAP_READONLY_USER_PASSWORD: "ropw"
+      LDAP_TLS: "true"
+      LDAP_TLS_VERIFY_CLIENT: "never"
+      LDAP_LOG_LEVEL: "256"
+    volumes:
+      - ./fixtures/schema:/schema:ro
+      - ./fixtures/bootstrap:/bootstrap:ro
+    ports:
+      - "${LDAP_TEST_PORT:-3389}:389"
+      - "${LDAPS_TEST_PORT:-6636}:636"
