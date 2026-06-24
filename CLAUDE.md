@@ -4,14 +4,16 @@ Guidance for working in this repo.
 
 ## What this is
 
-A self-maintained OpenLDAP 2.6 LTS Docker image, built from openldap.org source
-on Debian 13. Replaces the abandoned `osixia/openldap`. Same repo conventions as
-`intechcore/nginx-geoip` and `intechcore/subversion-ldap-httpd`.
+A self-maintained OpenLDAP 2.6 LTS Docker image, built from the official Symas
+OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
+`osixia/openldap`. Same repo conventions as `intechcore/nginx-geoip` and
+`intechcore/subversion-ldap-httpd`.
 
 ## Layout
 
-- `Dockerfile` — multi-stage: stage 1 compiles OpenLDAP (pinned
-  `OPENLDAP_VERSION` + `OPENLDAP_SHA256`), stage 2 is the slim runtime.
+- `Dockerfile` — single-stage: installs the pinned Symas packages
+  (`symas-openldap-server`/`-clients` at `SYMAS_VERSION`) from the Symas LTS apt
+  repo onto a slim Debian runtime. No source compile (keeps multi-arch fast).
 - `entrypoint.sh` — hybrid bootstrap. Env vars (osixia-compatible) drive
   first-boot config; `/schema` and `/bootstrap` LDIF cover the rest. Idempotent
   across restarts (only bootstraps when the config volume is empty).
@@ -22,18 +24,27 @@ on Debian 13. Replaces the abandoned `osixia/openldap`. Same repo conventions as
 
 ## Key facts
 
-- Binaries live under `/opt/openldap/{libexec,sbin,bin}` (on `PATH`).
+- Binaries live under `/opt/symas/{bin,sbin}` (on `PATH`); `slapd` itself is at
+  `/opt/symas/lib/slapd`, symlinked into `sbin`. Stock schema:
+  `/opt/symas/etc/openldap/schema`; backend/overlay modules:
+  `/opt/symas/lib/openldap`.
+- Backends/overlays are loadable modules in the Symas build (not static), so the
+  generated `slapd.conf` must `moduleload back_mdb` before `database mdb`.
 - Data: `/var/lib/ldap`; config: `/etc/ldap/slapd.d` (osixia-compatible paths).
-- slapd runs as the `openldap` user; the entrypoint starts as root to set up.
+- slapd runs as the `openldap` user (created in the Dockerfile — the Symas
+  packages don't add it); the entrypoint starts as root to set up.
 - Local admin access uses rootdn binds over `ldapi://` (`cn=admin,cn=config`
   and `cn=admin,<base>`), not SASL EXTERNAL.
 
 ## Versioning
 
 - Image tag = bundled OpenLDAP version + build suffix (`2.6.13-1`).
-- renovate tracks new 2.6 releases via the `endoflife.date` custom datasource.
-  A version bump PR is **not** automerged — refresh the tarball checksum with
-  `make bump-openldap V=<version>` (CI fails until the SHA256 matches).
+- `OPENLDAP_VERSION` is the upstream version (tag/label); `SYMAS_VERSION` is the
+  exact pinned apt revision actually installed (e.g. `2.6.13-3trixie1`).
+- renovate tracks new 2.6 releases via the `endoflife.date` custom datasource
+  (bumps `OPENLDAP_VERSION`). A version bump PR is **not** automerged — refresh
+  the Symas package revision with `make bump-openldap V=<version>`, which resolves
+  the matching `SYMAS_VERSION` from the Symas repo (CI fails until it installs).
 
 ## Common commands
 

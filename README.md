@@ -1,7 +1,10 @@
 # openldap
 
 Self-maintained OpenLDAP **2.6 LTS** directory server, built from the official
-[openldap.org](https://www.openldap.org/) source on Debian 13 (trixie).
+[Symas](https://www.symas.com/symas-openldap-packages) OpenLDAP 2.6 LTS packages
+on Debian 13 (trixie). Symas maintains OpenLDAP upstream, so these are
+authoritative binaries — and using prebuilt packages keeps multi-arch builds
+fast (no QEMU cross-compile).
 
 Drop-in replacement for the abandoned `osixia/openldap` image: the same
 environment variables drive first-boot setup, and the standard data/config
@@ -41,7 +44,7 @@ volumes:
 
 ## Features
 
-- OpenLDAP 2.6.13 (LTS), compiled from source — version decoupled from Debian
+- OpenLDAP 2.6.13 (LTS) from official Symas packages — version decoupled from Debian's `slapd`
 - `cn=config` (dynamic) backend, `mdb` data store
 - First-boot bootstrap driven by environment variables (osixia-compatible)
 - Custom schema loading from `/schema` (`*.schema` and `*.ldif`)
@@ -96,7 +99,7 @@ make build                       # build openldap:2.6.13
 make test                        # build + integration tests (needs docker compose)
 make lint                        # shellcheck + hadolint
 make scan                        # build + trivy scan
-make bump-openldap V=2.6.14      # bump version + refresh tarball checksum
+make bump-openldap V=2.6.14      # bump version + resolve Symas package revision
 ```
 
 ## Releasing

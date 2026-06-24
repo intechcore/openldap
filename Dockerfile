@@ -1,97 +1,55 @@
-# OpenLDAP — self-maintained image built from the official openldap.org source.
+# OpenLDAP — self-maintained image built from the official Symas OpenLDAP 2.6
+# LTS packages on Debian 13 (Trixie).
 #
-# We compile a pinned OpenLDAP release (the current 2.6 LTS) rather than using
-# the distro package, so the server version is decoupled from the Debian
-# release and tracked explicitly via renovate. The tarball checksum is pinned
-# to detect tampering; bump both with `make bump-openldap V=<version>`.
+# Symas is the company that maintains OpenLDAP upstream; their signed apt
+# repository ships the current 2.6 LTS as prebuilt amd64 + arm64 binaries. We
+# install a pinned package version (decoupled from Debian's own slapd, tracked
+# via renovate) instead of compiling from source — this keeps multi-arch builds
+# fast (no QEMU cross-compile) while still using authoritative binaries.
+# Bump the pinned version with `make bump-openldap V=<version>`.
 
-# renovate: openldap
-ARG OPENLDAP_VERSION=2.6.13
-ARG OPENLDAP_SHA256=d693b49517a42efb85a1a364a310aed16a53d428d1b46c0d31ef3fba78fcb656
-
-# ─── Stage 1: build OpenLDAP from source ────────────────────────────────────
-FROM debian:stable AS builder
-
-ARG OPENLDAP_VERSION
-ARG OPENLDAP_SHA256
-
-# Fail a build step if any command in a pipe fails (e.g. curl in the
-# checksum-verify pipe below) instead of masking it with the last command's
-# exit code. Required by hadolint DL4006 and genuinely safer here.
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-# hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        curl \
-        groff-base \
-        libsasl2-dev \
-        libssl-dev \
-        libltdl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-RUN curl -fsSLo openldap.tgz \
-        "https://www.openldap.org/software/download/OpenLDAP/openldap-release/openldap-${OPENLDAP_VERSION}.tgz" && \
-    printf '%s  openldap.tgz\n' "$OPENLDAP_SHA256" | sha256sum -c - && \
-    tar xzf openldap.tgz && \
-    rm openldap.tgz
-
-WORKDIR /build/openldap-${OPENLDAP_VERSION}
-# mdb is built static (always available); overlays are built as loadable
-# modules so they can be enabled later via cn=config without a rebuild.
-RUN ./configure \
-        --prefix=/opt/openldap \
-        --sysconfdir=/opt/openldap/etc \
-        --localstatedir=/var \
-        --enable-slapd \
-        --enable-mdb \
-        --enable-crypt \
-        --enable-spasswd \
-        --enable-modules \
-        --enable-overlays=mod \
-        --with-tls=openssl \
-        --with-cyrus-sasl \
-        --disable-bdb --disable-hdb --disable-ndb && \
-    make depend && \
-    make -j"$(nproc)" && \
-    make install && \
-    strip /opt/openldap/libexec/slapd /opt/openldap/bin/* /opt/openldap/sbin/* 2>/dev/null || true
-
-# ─── Stage 2: runtime image ─────────────────────────────────────────────────
 FROM debian:stable-slim
 
-ARG OPENLDAP_VERSION
+# Upstream OpenLDAP version (used for tags/labels) and the exact Symas apt
+# package revision to install (pinned for reproducible builds).
+# renovate: openldap
+ARG OPENLDAP_VERSION=2.6.13
+ARG SYMAS_VERSION=2.6.13-3trixie1
 
 LABEL maintainer="Sergey Grigoriev <s.grigoriev@intechcore.com>"
 LABEL org.opencontainers.image.title="openldap"
-LABEL org.opencontainers.image.description="OpenLDAP 2.6 LTS directory server built from source on Debian 13 — self-maintained replacement for osixia/openldap"
+LABEL org.opencontainers.image.description="OpenLDAP 2.6 LTS directory server from the official Symas packages on Debian 13 — self-maintained replacement for osixia/openldap"
 LABEL org.opencontainers.image.source="https://github.com/intechcore/openldap"
 LABEL org.opencontainers.image.documentation="https://github.com/intechcore/openldap/blob/main/README.md"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.version="${OPENLDAP_VERSION}"
 
-# Runtime shared libraries for the compiled binaries + openssl CLI for the
-# self-signed TLS fallback.
+# Add the Symas LTS repo (armored key consumed directly via signed-by, no gnupg
+# needed) and install the pinned server + client packages. openssl is kept for
+# the self-signed TLS fallback in the entrypoint; the symas packages pull their
+# own libssl/libsasl runtime deps. curl is used only to fetch the key and is
+# purged afterwards to keep the image slim.
 # hadolint ignore=DL3008
 RUN apt-get update && \
-    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends ca-certificates curl openssl && \
+    curl -fsSL https://repo.symas.com/repo/gpg/RPM-GPG-KEY-symas-com-signing-key \
+        -o /usr/share/keyrings/symas-key.asc && \
+    echo "deb [signed-by=/usr/share/keyrings/symas-key.asc] https://repo.symas.com/repo/deb/main/release26 trixie main" \
+        > /etc/apt/sources.list.d/soldap-release26.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
-        libsasl2-2 \
-        libssl3 \
-        libltdl7 \
-        openssl \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/* && \
+        "symas-openldap-server=${SYMAS_VERSION}" \
+        "symas-openldap-clients=${SYMAS_VERSION}" && \
+    apt-get purge -y curl && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* && \
     groupadd -r openldap && \
-    useradd -r -g openldap -d /var/lib/ldap -s /usr/sbin/nologin openldap
+    useradd -r -g openldap -d /var/lib/ldap -s /usr/sbin/nologin openldap && \
+    ln -s /opt/symas/lib/slapd /opt/symas/sbin/slapd
 
-COPY --from=builder /opt/openldap /opt/openldap
-
-# slapd lives in libexec; slap* admin tools in sbin; ldap* clients in bin.
-ENV PATH="/opt/openldap/bin:/opt/openldap/sbin:/opt/openldap/libexec:${PATH}"
+# Symas layout: slapd in lib/ (symlinked into sbin above), slap* admin tools in
+# sbin, ldap* clients in bin.
+ENV PATH="/opt/symas/bin:/opt/symas/sbin:${PATH}"
 
 # Runtime directories:
 #   /container/certs  — mount TLS certs here (compat with the old osixia layout)

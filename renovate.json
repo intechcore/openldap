@@ -33,7 +33,7 @@
   ],
   "packageRules": [
     {
-      "description": "OpenLDAP bumps need the tarball checksum refreshed (make bump-openldap), so do not automerge — CI fails the PR until the SHA256 is updated.",
+      "description": "OpenLDAP bumps need the pinned Symas package revision refreshed (make bump-openldap), so do not automerge — CI fails the PR until SYMAS_VERSION matches an installable package.",
       "matchDatasources": ["custom.openldap-eol"],
       "groupName": "openldap version",
       "automerge": false

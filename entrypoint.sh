@@ -31,9 +31,9 @@ SCHEMA_DIR="${SCHEMA_DIR:-/schema}"
 BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-/bootstrap}"
 CONFIG_DIR=/etc/ldap/slapd.d
 DATA_DIR=/var/lib/ldap
-# Stock schema + loadable overlay modules shipped by the source build.
-SCHEMA_BASE="${SCHEMA_BASE:-/opt/openldap/etc/openldap/schema}"
-MODULE_PATH="${MODULE_PATH:-/opt/openldap/libexec/openldap}"
+# Stock schema + loadable backend/overlay modules shipped by the Symas packages.
+SCHEMA_BASE="${SCHEMA_BASE:-/opt/symas/etc/openldap/schema}"
+MODULE_PATH="${MODULE_PATH:-/opt/symas/lib/openldap}"
 
 # Local ldapi:// socket with an explicit path so server and client always agree
 # regardless of the compiled-in default.
@@ -89,9 +89,10 @@ bootstrap_config() {
         done
         echo "pidfile /run/slapd/slapd.pid"
         echo "argsfile /run/slapd/slapd.args"
-        # mdb is built static; modulepath only matters if an overlay LDIF is
-        # loaded later (overlays are shipped as loadable modules).
+        # In the Symas packages every backend/overlay is a loadable module, so
+        # the mdb backend must be loaded explicitly before its database stanza.
         echo "modulepath $MODULE_PATH"
+        echo "moduleload back_mdb"
         if [ "$LDAP_TLS" = "true" ]; then
             echo "TLSCACertificateFile $TLS_CA"
             echo "TLSCertificateFile $TLS_CRT"
