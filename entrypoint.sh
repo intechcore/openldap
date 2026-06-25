@@ -18,6 +18,11 @@ LDAP_CONFIG_PASSWORD="${LDAP_CONFIG_PASSWORD:-$LDAP_ADMIN_PASSWORD}"
 LDAP_READONLY_USER="${LDAP_READONLY_USER:-false}"
 LDAP_READONLY_USER_USERNAME="${LDAP_READONLY_USER_USERNAME:-readonly}"
 LDAP_READONLY_USER_PASSWORD="${LDAP_READONLY_USER_PASSWORD:-readonly}"
+# Overlays enabled by default for osixia parity. memberof maintains the reverse
+# memberOf attribute; refint keeps DN references consistent on delete/rename.
+# Both are configured exactly as osixia did (groupOfUniqueNames / uniqueMember).
+LDAP_MEMBEROF="${LDAP_MEMBEROF:-true}"
+LDAP_REFINT="${LDAP_REFINT:-true}"
 LDAP_TLS="${LDAP_TLS:-false}"
 LDAP_TLS_CRT_FILENAME="${LDAP_TLS_CRT_FILENAME:-ldap.crt}"
 LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
@@ -202,6 +207,50 @@ bootstrap_data() {
         ldapadd -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" -f "$f" >/dev/null 2>&1 \
             || log "  (schema $f already present or partially applied)"
     done
+
+    # Built-in overlays (osixia parity), loaded before the data so memberOf is
+    # computed as group entries land. memberof must precede refint so they take
+    # the same {0}/{1} indices osixia used.
+    if [ "$LDAP_MEMBEROF" = "true" ]; then
+        log "Enabling memberof overlay"
+        ldapmodify -c -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" >/dev/null 2>&1 <<EOF || log "  (memberof already configured)"
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: memberof
+
+dn: olcOverlay=memberof,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcMemberOf
+olcOverlay: memberof
+olcMemberOfDangling: ignore
+olcMemberOfRefInt: TRUE
+olcMemberOfGroupOC: groupOfUniqueNames
+olcMemberOfMemberAD: uniqueMember
+olcMemberOfMemberOfAD: memberOf
+EOF
+    fi
+    if [ "$LDAP_REFINT" = "true" ]; then
+        log "Enabling refint overlay"
+        ldapmodify -c -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" >/dev/null 2>&1 <<EOF || log "  (refint already configured)"
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: refint
+
+dn: olcOverlay=refint,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcRefintConfig
+olcOverlay: refint
+olcRefintAttribute: owner
+olcRefintAttribute: manager
+olcRefintAttribute: uniqueMember
+olcRefintAttribute: member
+olcRefintAttribute: memberOf
+EOF
+    fi
 
     # Overlay / cn=config customisation (e.g. ppolicy, memberof, refint). These
     # are cn=config "changetype:" LDIFs applied under the config rootdn before

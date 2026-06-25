@@ -42,6 +42,9 @@ OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
   `olcDatabase={1}mdb,cn=config` (osixia-compatible index that overlay LDIFs in
   `/overlays`, e.g. ppolicy, reference). Overlays load before the `/bootstrap`
   data.
+- `memberof` + `refint` overlays are enabled by default (osixia parity, toggles
+  `LDAP_MEMBEROF`/`LDAP_REFINT`), configured for `groupOfUniqueNames`/
+  `uniqueMember`. Loaded in `bootstrap_data` before user `/overlays`.
 - Data: `/var/lib/ldap`; config: `/etc/ldap/slapd.d` (osixia-compatible paths).
 - slapd runs as the `openldap` user (created in the Dockerfile — the Symas
   packages don't add it); the entrypoint starts as root to set up.

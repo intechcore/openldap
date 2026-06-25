@@ -29,7 +29,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=24
+TOTAL=26
 
 cleanup() {
     echo ""
@@ -338,6 +338,23 @@ if $DISABLED && $ENABLED; then
     pass "pwdAccountLockedTime disables then re-enables bind"
 else
     fail "disable/enable failed (disabled=$DISABLED enabled=$ENABLED)"
+fi
+
+# ── Default overlays (osixia parity): memberof + refint ─────────────────────
+echo "[25/$TOTAL] memberof computes reverse membership (memberOf)"
+MO=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=asmith,ou=people,$BASE" memberOf 2>/dev/null)
+if echo "$MO" | grep -qi "cn=developers,ou=groups,$BASE" && echo "$MO" | grep -qi "cn=everyone,ou=groups,$BASE"; then
+    pass "asmith has computed memberOf (developers + everyone)"
+else
+    fail "memberOf not computed (got: $(echo "$MO" | grep -i memberof | tr '\n' ' '))"
+fi
+
+echo "[26/$TOTAL] refint cleans DN references when an entry is deleted"
+docker exec "$CONTAINER" ldapdelete -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" "cn=ddavis,ou=people,$BASE" >/dev/null 2>&1
+if dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=admins,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -qi "cn=ddavis,"; then
+    fail "refint did not remove the deleted user from cn=admins"
+else
+    pass "deleting cn=ddavis removed it from cn=admins uniqueMember"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

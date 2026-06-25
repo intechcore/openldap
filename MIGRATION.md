@@ -43,8 +43,10 @@ from the env vars (and overlays from `/overlays`, see step 2).
 The new image applies `/bootstrap` LDIF with `ldapadd`, which **rejects
 operational / `NO-USER-MODIFICATION` attributes** that `slapcat` emits. Strip
 them before reimport — note `memberOf`, which the old osixia server's memberof
-overlay computed onto every user entry (membership really lives in the group
-entries' `member`/`uniqueMember`, recomputed if you re-enable the overlay):
+overlay computed onto every user entry. Membership really lives in the group
+entries' `member`/`uniqueMember`, and this image runs the memberof overlay by
+default (`LDAP_MEMBEROF`), so `memberOf` is recomputed automatically after the
+import:
 
 ```bash
 grep -ivE '^(structuralObjectClass|entryUUID|entryCSN|creatorsName|createTimestamp|modifiersName|modifyTimestamp|entryDN|subschemaSubentry|hasSubordinates|contextCSN|memberOf|pwdChangedTime|pwdFailureTime|pwdGraceUseTime|pwdHistory|pwdAccountLockedTime|pwdReset):' \

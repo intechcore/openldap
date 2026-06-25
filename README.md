@@ -48,7 +48,8 @@ volumes:
 - `cn=config` (dynamic) backend, `mdb` data store
 - First-boot bootstrap driven by environment variables (osixia-compatible)
 - Custom schema loading from `/schema` (`*.schema` and `*.ldif`)
-- Overlay/`cn=config` loading from `/overlays` (e.g. ppolicy, memberof)
+- `memberof` + `refint` overlays enabled by default (osixia parity), plus
+  `/overlays` for more (e.g. ppolicy)
 - Initial data load from `/bootstrap` (`*.ldif`)
 - TLS via mounted certs, with a self-signed fallback for dev/CI
 - Health check over the local `ldapi://` socket
@@ -69,6 +70,8 @@ starts reuse the persisted `cn=config`.
 | `LDAP_READONLY_USER` | `false` | Create a read-only bind account |
 | `LDAP_READONLY_USER_USERNAME` | `readonly` | Read-only account CN |
 | `LDAP_READONLY_USER_PASSWORD` | `readonly` | Read-only account password |
+| `LDAP_MEMBEROF` | `true` | Enable the memberof overlay (reverse `memberOf`) |
+| `LDAP_REFINT` | `true` | Enable the refint overlay (referential integrity) |
 | `LDAP_TLS` | `false` | Enable `ldaps://` + StartTLS |
 | `LDAP_TLS_CRT_FILENAME` | `ldap.crt` | Cert filename in `/container/certs` |
 | `LDAP_TLS_KEY_FILENAME` | `ldap.key` | Key filename |
@@ -101,8 +104,13 @@ socket) is in [`examples/letsencrypt/`](examples/letsencrypt/).
 
 ## Overlays
 
-Drop `cn=config` LDIF files into `/overlays` to enable overlays/modules on first
-boot (applied before the data load). The data backend is
+The **memberof** and **refint** overlays are enabled by default (matching
+osixia, configured for `groupOfUniqueNames`/`uniqueMember`): `memberof`
+maintains the reverse `memberOf` attribute, `refint` cleans DN references on
+delete/rename. Disable either with `LDAP_MEMBEROF=false` / `LDAP_REFINT=false`.
+
+Drop additional `cn=config` LDIF files into `/overlays` to enable more overlays
+on first boot (applied before the data load). The data backend is
 `olcDatabase={1}mdb,cn=config`. Example — the **ppolicy** password-policy overlay:
 
 ```ldif

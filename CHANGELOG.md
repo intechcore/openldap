@@ -13,6 +13,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   (`LDAP_DOMAIN`, `LDAP_ORGANISATION`, `LDAP_ADMIN_PASSWORD`,
   `LDAP_CONFIG_PASSWORD`, `LDAP_READONLY_USER*`, `LDAP_TLS*`, `LDAP_LOG_LEVEL`).
 - Custom schema loading from `/schema` (`*.schema` and `*.ldif`).
+- `memberof` + `refint` overlays enabled by default (osixia parity, toggles
+  `LDAP_MEMBEROF` / `LDAP_REFINT`), configured for `groupOfUniqueNames` /
+  `uniqueMember`.
 - Overlay/`cn=config` loading from `/overlays` on first boot (e.g. ppolicy);
   the mdb backend is placed at `olcDatabase={1}mdb,cn=config`.
 - Initial data bootstrap from `/bootstrap` (`*.ldif`).
