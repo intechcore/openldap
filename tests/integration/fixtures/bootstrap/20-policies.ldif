@@ -10,7 +10,7 @@ objectClass: device
 objectClass: pwdPolicy
 cn: default
 pwdAttribute: userPassword
-pwdCheckQuality: 0
+pwdCheckQuality: 2
 pwdMinLength: 8
 pwdExpireWarning: 604800
 pwdLockout: TRUE

@@ -31,13 +31,17 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=37
+TOTAL=50
 
+# Standalone containers spun up by the configuration-variant tests.
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
     cd "$SCRIPT_DIR"
     IMAGE_NAME="$IMAGE_NAME" IMAGE_TAG="$IMAGE_TAG" docker compose down -v 2>/dev/null || true
+    # shellcheck disable=SC2086
+    docker rm -f $EXTRA_CONTAINERS >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -499,6 +503,158 @@ if dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b 
     pass "added ldapPublicKey + sshPublicKey and read it back"
 else
     fail "openssh-lpk schema not available (sshPublicKey could not be stored)"
+fi
+
+# ── Data-plane edge cases ───────────────────────────────────────────────────
+echo "[38/$TOTAL] indexed search: substring and presence filters return matches"
+SUB=$(dsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(cn=a*)" dn 2>/dev/null | grep -c '^dn:' || true)
+PRES=$(dsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(mail=*)" dn 2>/dev/null | grep -c '^dn:' || true)
+if [ "${SUB:-0}" -ge 1 ] && [ "${PRES:-0}" -ge 9 ]; then
+    pass "substring (cn=a*)=$SUB, presence (mail=*)=$PRES"
+else
+    fail "indexed search returned too little (sub=$SUB pres=$PRES)"
+fi
+
+echo "[39/$TOTAL] ModRDN: rename a user and refint updates group references"
+docker exec "$CONTAINER" ldapmodrdn -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" "cn=ijames,ou=people,$BASE" "cn=ijames2" >/dev/null 2>&1
+RN_NEW=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=testers,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -c 'cn=ijames2,' || true)
+RN_OLD=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=testers,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -c 'cn=ijames,' || true)
+if [ "${RN_NEW:-0}" -ge 1 ] && [ "${RN_OLD:-0}" -eq 0 ]; then
+    pass "rename propagated by refint (testers -> cn=ijames2)"
+else
+    fail "refint did not update references on rename (new=$RN_NEW old=$RN_OLD)"
+fi
+
+echo "[40/$TOTAL] ppolicy: password history blocks reuse"
+docker exec "$CONTAINER" ldappasswd -x -H "$LDAPI" -D "cn=bjones,ou=people,$BASE" -w "$USER_PW" -s Hist1Pass! >/dev/null 2>&1
+docker exec "$CONTAINER" ldappasswd -x -H "$LDAPI" -D "cn=bjones,ou=people,$BASE" -w Hist1Pass! -s Hist2Pass! >/dev/null 2>&1
+if docker exec "$CONTAINER" ldappasswd -x -H "$LDAPI" -D "cn=bjones,ou=people,$BASE" -w Hist2Pass! -s Hist1Pass! >/dev/null 2>&1; then
+    fail "reusing a password from history was allowed"
+else
+    pass "reusing a password in history is rejected"
+fi
+
+echo "[41/$TOTAL] ppolicy: minimum length enforced on self password change"
+if docker exec "$CONTAINER" ldappasswd -x -H "$LDAPI" -D "cn=eevans,ou=people,$BASE" -w "$USER_PW" -s short >/dev/null 2>&1; then
+    fail "a password below pwdMinLength was accepted"
+else
+    pass "password below pwdMinLength is rejected"
+fi
+
+echo "[42/$TOTAL] binary attribute round-trip (jpegPhoto, base64)"
+# Minimal valid JPEG (SOI+EOI markers) — slapd validates the jpegPhoto syntax.
+BLOB="/9j/2Q=="
+docker exec -i "$CONTAINER" ldapmodify -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF
+dn: cn=asmith,ou=people,$BASE
+changetype: modify
+add: jpegPhoto
+jpegPhoto:: $BLOB
+EOF
+GOT=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=asmith,ou=people,$BASE" jpegPhoto 2>/dev/null | sed -n 's/^jpegPhoto:: //p')
+if [ "$GOT" = "$BLOB" ]; then
+    pass "jpegPhoto stored and read back byte-identical"
+else
+    fail "binary round-trip mismatch (got '$GOT')"
+fi
+
+echo "[43/$TOTAL] rootDSE advertises supported features"
+RD=$(docker exec "$CONTAINER" ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -b "" -s base supportedLDAPVersion supportedControl 2>/dev/null)
+if echo "$RD" | grep -q "supportedLDAPVersion: 3" && echo "$RD" | grep -qi "^supportedControl:"; then
+    pass "rootDSE advertises LDAPv3 and controls"
+else
+    fail "rootDSE missing supported* attributes"
+fi
+
+# ── Container behaviour ─────────────────────────────────────────────────────
+echo "[44/$TOTAL] container HEALTHCHECK reports healthy"
+HS=""
+for _ in $(seq 1 30); do
+    HS=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$CONTAINER" 2>/dev/null || true)
+    [ "$HS" = "healthy" ] && break
+    sleep 2
+done
+if [ "$HS" = "healthy" ]; then
+    pass "healthcheck status is healthy"
+else
+    fail "healthcheck not healthy (status=$HS)"
+fi
+
+echo "[45/$TOTAL] slapd runs as the non-root openldap user"
+P1=$(docker exec "$CONTAINER" sh -c 'cat /proc/1/comm; awk "/^Uid:/{print \$2}" /proc/1/status' 2>/dev/null || true)
+if echo "$P1" | grep -qx slapd && echo "$P1" | grep -qx 999; then
+    pass "PID 1 is slapd running as uid 999"
+else
+    fail "slapd not running as non-root (got: $(echo "$P1" | tr '\n' ' '))"
+fi
+
+echo "[46/$TOTAL] slapcat produces a complete LDIF backup"
+# The admin tools default to the Symas config dir, so point -F at our slapd.d.
+SC=$(docker exec "$CONTAINER" slapcat -F /etc/ldap/slapd.d -o ldif-wrap=no -b "$BASE" 2>/dev/null | grep -c '^dn:' || true)
+if [ "${SC:-0}" -ge 9 ]; then
+    pass "slapcat dumped $SC entries"
+else
+    fail "slapcat backup incomplete ($SC entries)"
+fi
+
+echo "[47/$TOTAL] restart: data persists and bootstrap is skipped"
+docker exec -i "$CONTAINER" ldapadd -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF
+dn: cn=restartmarker,ou=people,$BASE
+objectClass: inetOrgPerson
+cn: restartmarker
+sn: marker
+EOF
+docker restart "$CONTAINER" >/dev/null 2>&1
+RST_OK=false
+for _ in $(seq 1 90); do
+    docker exec "$CONTAINER" ldapsearch -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "$BASE" -s base o >/dev/null 2>&1 && { RST_OK=true; break; }
+    sleep 1
+done
+MARK=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=restartmarker,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
+SKIP=$(docker logs "$CONTAINER" 2>&1 | grep -c "skipping bootstrap" || true)
+if $RST_OK && [ "${MARK:-0}" -ge 1 ] && [ "${SKIP:-0}" -ge 1 ]; then
+    pass "data survived restart and bootstrap was skipped"
+else
+    fail "restart behaviour wrong (ready=$RST_OK marker=$MARK skipMsg=$SKIP)"
+fi
+
+# ── Configuration variants (standalone containers) ──────────────────────────
+echo "[48/$TOTAL] non-TLS mode: ldap:// works, ldaps:// is not served"
+docker rm -f openldap-notls >/dev/null 2>&1 || true
+docker run -d --name openldap-notls -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+NT_OK=false
+for _ in $(seq 1 90); do docker exec openldap-notls ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { NT_OK=true; break; }; sleep 1; done
+NT_LDAP=false; NT_LDAPS=false
+docker exec openldap-notls ldapsearch -x -H ldap://localhost -b "" -s base >/dev/null 2>&1 && NT_LDAP=true
+docker exec openldap-notls ldapsearch -x -H ldaps://localhost -b "" -s base >/dev/null 2>&1 || NT_LDAPS=true
+docker rm -f openldap-notls >/dev/null 2>&1 || true
+if $NT_OK && $NT_LDAP && $NT_LDAPS; then
+    pass "ldap:// works and ldaps:// is absent when LDAP_TLS=false"
+else
+    fail "non-TLS mode wrong (ready=$NT_OK ldap=$NT_LDAP ldapsAbsent=$NT_LDAPS)"
+fi
+
+echo "[49/$TOTAL] entrypoint runs a non-slapd command (CMD override)"
+CMD_OUT=$(docker run --rm -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" sh -c 'echo CMD_OVERRIDE_OK' 2>/dev/null || true)
+if echo "$CMD_OUT" | grep -q "CMD_OVERRIDE_OK"; then
+    pass "custom command executed via the entrypoint"
+else
+    fail "CMD override did not run"
+fi
+
+echo "[50/$TOTAL] base DN derived from domain and overridable"
+docker rm -f openldap-domain openldap-basedn >/dev/null 2>&1 || true
+docker run -d --name openldap-domain  -e LDAP_DOMAIN=a.b.test    -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+docker run -d --name openldap-basedn  -e LDAP_DOMAIN=example.test -e LDAP_BASE_DN="dc=acme,dc=internal" -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+for _ in $(seq 1 90); do docker exec openldap-domain ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && break; sleep 1; done
+for _ in $(seq 1 90); do docker exec openldap-basedn ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && break; sleep 1; done
+DERIVED=false; OVERRIDE=false
+docker exec openldap-domain ldapsearch -LLL -x -H "$LDAPI" -b "" -s base namingContexts 2>/dev/null | grep -qi "dc=a,dc=b,dc=test" && DERIVED=true
+docker exec openldap-basedn ldapsearch -LLL -x -H "$LDAPI" -b "" -s base namingContexts 2>/dev/null | grep -qi "dc=acme,dc=internal" && OVERRIDE=true
+docker rm -f openldap-domain openldap-basedn >/dev/null 2>&1 || true
+if $DERIVED && $OVERRIDE; then
+    pass "a.b.test -> dc=a,dc=b,dc=test; LDAP_BASE_DN override honoured"
+else
+    fail "base DN handling wrong (derived=$DERIVED override=$OVERRIDE)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
