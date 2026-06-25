@@ -29,7 +29,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=26
+TOTAL=30
 
 cleanup() {
     echo ""
@@ -355,6 +355,41 @@ if dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b 
     fail "refint did not remove the deleted user from cn=admins"
 else
     pass "deleting cn=ddavis removed it from cn=admins uniqueMember"
+fi
+
+# ── osixia parity: memberOf index, ppolicy schema, TLS floor, strict ACL ────
+ccfg() { docker exec "$CONTAINER" ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "cn=admin,cn=config" -w "$CONFIG_PW" "$@" 2>/dev/null; }
+
+echo "[27/$TOTAL] memberOf is indexed on the mdb backend"
+if ccfg -b "olcDatabase={1}mdb,cn=config" -s base olcDbIndex | grep -qiE '^olcDbIndex: memberOf eq'; then
+    pass "olcDbIndex memberOf eq present"
+else
+    fail "memberOf is not indexed"
+fi
+
+echo "[28/$TOTAL] ppolicy module (schema) loaded by default"
+if ccfg -b "cn=module{0},cn=config" -s base olcModuleLoad | grep -qi 'ppolicy'; then
+    pass "ppolicy module loaded — pwdPolicy schema available by default"
+else
+    fail "ppolicy module not loaded by default"
+fi
+
+echo "[29/$TOTAL] TLS hardening: protocol floor configured + TLS 1.2 works"
+PMIN=$(ccfg -b cn=config -s base olcTLSProtocolMin | sed -n 's/^olcTLSProtocolMin: //p')
+T12=$(docker exec "$CONTAINER" sh -c 'echo | openssl s_client -connect 127.0.0.1:636 -tls1_2 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
+if [ -n "$PMIN" ] && [ "$PMIN" != "0.0" ] && [ -n "$T12" ]; then
+    pass "olcTLSProtocolMin=$PMIN and TLS 1.2 handshake works"
+else
+    fail "TLS floor not enforced (min='$PMIN' tls1.2_cert='$T12')"
+fi
+
+echo "[30/$TOTAL] ACL: a user reads its own entry but not others (osixia self-read-only)"
+SELF=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=asmith,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
+OTHER=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=bjones,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
+if [ "${SELF:-0}" -ge 1 ] && [ "${OTHER:-0}" -eq 0 ]; then
+    pass "asmith reads self ($SELF) but not bjones ($OTHER)"
+else
+    fail "self-read-only ACL not enforced (self=$SELF other=$OTHER)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

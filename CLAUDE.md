@@ -44,7 +44,17 @@ OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
   data.
 - `memberof` + `refint` overlays are enabled by default (osixia parity, toggles
   `LDAP_MEMBEROF`/`LDAP_REFINT`), configured for `groupOfUniqueNames`/
-  `uniqueMember`. Loaded in `bootstrap_data` before user `/overlays`.
+  `uniqueMember`. Loaded in `bootstrap_data` before user `/overlays`; `memberOf`
+  is indexed (added at runtime, since the attr is only defined once the module
+  loads).
+- The ppolicy module is `moduleload`ed in the generated slapd.conf so its
+  `pwdPolicy` schema is available by default (no standalone ppolicy.schema file
+  exists in the Symas build); the overlay itself is still opt-in via `/overlays`.
+- TLS is hardened by default: `TLSProtocolMin` (1.2) + optional cipher suite
+  (`LDAP_TLS_PROTOCOL_MIN`/`LDAP_TLS_CIPHER_SUITE`). Stack is OpenSSL (not
+  GnuTLS like osixia), so cipher strings use OpenSSL syntax.
+- Default ACLs follow osixia's restrictive model: user reads only its own entry,
+  `userPassword` not readable, readonly account reads the tree, rootdn bypasses.
 - Data: `/var/lib/ldap`; config: `/etc/ldap/slapd.d` (osixia-compatible paths).
 - slapd runs as the `openldap` user (created in the Dockerfile — the Symas
   packages don't add it); the entrypoint starts as root to set up.

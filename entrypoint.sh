@@ -29,6 +29,11 @@ LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
 LDAP_TLS_CA_CRT_FILENAME="${LDAP_TLS_CA_CRT_FILENAME:-ca.crt}"
 LDAP_TLS_DH_PARAM_FILENAME="${LDAP_TLS_DH_PARAM_FILENAME:-dhparam.pem}"
 LDAP_TLS_VERIFY_CLIENT="${LDAP_TLS_VERIFY_CLIENT:-demand}"
+# TLS hardening (osixia parity): minimum protocol TLS 1.2 (3.3) by default, and
+# an optional cipher suite (OpenSSL syntax — left to the OpenSSL default when
+# unset). 3.1=TLS1.0, 3.2=TLS1.1, 3.3=TLS1.2, 3.4=TLS1.3.
+LDAP_TLS_PROTOCOL_MIN="${LDAP_TLS_PROTOCOL_MIN:-3.3}"
+LDAP_TLS_CIPHER_SUITE="${LDAP_TLS_CIPHER_SUITE:-}"
 # Opt-in: watch the TLS certificate for changes (e.g. an external Let's Encrypt
 # renewal rewriting the mounted cert) and hot-reload slapd's TLS context without
 # a restart. Off by default to avoid a background process.
@@ -104,12 +109,18 @@ bootstrap_config() {
         # the mdb backend must be loaded explicitly before its database stanza.
         echo "modulepath $MODULE_PATH"
         echo "moduleload back_mdb"
+        # Load the ppolicy module so its schema (pwdPolicy, pwd* attrs) is
+        # available by default (osixia parity) — there is no standalone
+        # ppolicy.schema file; the overlay is only activated when configured.
+        echo "moduleload ppolicy"
         if [ "$LDAP_TLS" = "true" ]; then
             echo "TLSCACertificateFile $TLS_CA"
             echo "TLSCertificateFile $TLS_CRT"
             echo "TLSCertificateKeyFile $TLS_KEY"
             [ -f "$TLS_DH" ] && echo "TLSDHParamFile $TLS_DH"
             echo "TLSVerifyClient $LDAP_TLS_VERIFY_CLIENT"
+            [ -n "$LDAP_TLS_PROTOCOL_MIN" ] && echo "TLSProtocolMin $LDAP_TLS_PROTOCOL_MIN"
+            [ -n "$LDAP_TLS_CIPHER_SUITE" ] && echo "TLSCipherSuite $LDAP_TLS_CIPHER_SUITE"
         fi
         cat <<EOF
 loglevel $LDAP_LOG_LEVEL
@@ -137,12 +148,10 @@ index member eq
 access to attrs=userPassword,shadowLastChange
   by self write
   by anonymous auth
-  by dn.exact="cn=$LDAP_READONLY_USER_USERNAME,$LDAP_BASE_DN" read
   by * none
 access to *
+  by self read
   by dn.exact="cn=$LDAP_READONLY_USER_USERNAME,$LDAP_BASE_DN" read
-  by self write
-  by users read
   by * none
 
 database monitor
@@ -229,6 +238,11 @@ olcMemberOfRefInt: TRUE
 olcMemberOfGroupOC: groupOfUniqueNames
 olcMemberOfMemberAD: uniqueMember
 olcMemberOfMemberOfAD: memberOf
+
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+add: olcDbIndex
+olcDbIndex: memberOf eq
 EOF
     fi
     if [ "$LDAP_REFINT" = "true" ]; then

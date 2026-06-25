@@ -1,13 +1,9 @@
-# Enable the ppolicy (password policy) overlay — the schema extension the
-# intechcore directory relies on (account lockout, password history, the
-# pwdAccountLockedTime enable/disable mechanism used by itc-ctrl).
+# Enable the ppolicy (password policy) overlay — account lockout, password
+# history, the pwdAccountLockedTime enable/disable mechanism used by itc-ctrl.
 #
-# The mdb data backend is olcDatabase={1}mdb,cn=config (osixia-compatible index).
-dn: cn=module{0},cn=config
-changetype: modify
-add: olcModuleLoad
-olcModuleLoad: ppolicy
-
+# The ppolicy module (and its pwdPolicy schema) is loaded by default, so only
+# the overlay itself needs configuring here. The mdb data backend is
+# olcDatabase={1}mdb,cn=config (osixia-compatible index).
 dn: olcOverlay=ppolicy,olcDatabase={1}mdb,cn=config
 changetype: add
 objectClass: olcOverlayConfig

@@ -78,6 +78,8 @@ starts reuse the persisted `cn=config`.
 | `LDAP_TLS_CA_CRT_FILENAME` | `ca.crt` | CA cert filename |
 | `LDAP_TLS_DH_PARAM_FILENAME` | `dhparam.pem` | DH params filename |
 | `LDAP_TLS_VERIFY_CLIENT` | `demand` | `never`/`allow`/`try`/`demand` |
+| `LDAP_TLS_PROTOCOL_MIN` | `3.3` | Minimum TLS version (`3.3`=1.2, `3.4`=1.3) |
+| `LDAP_TLS_CIPHER_SUITE` | _(OpenSSL default)_ | OpenSSL cipher string |
 | `LDAP_TLS_WATCH` | `false` | Watch the cert file and hot-reload slapd on renewal |
 | `LDAP_TLS_WATCH_INTERVAL` | `3600` | Cert-watch poll interval (seconds) |
 | `LDAP_LOG_LEVEL` | `256` | slapd log level |
@@ -128,6 +130,18 @@ olcOverlay: ppolicy
 olcPPolicyDefault: cn=default,ou=policies,dc=example,dc=org
 olcPPolicyHashCleartext: TRUE
 ```
+
+## Access control
+
+The default ACLs match osixia's restrictive model:
+
+- `userPassword` — self can change it, anonymous may use it to authenticate
+  (bind), nobody can read the hash.
+- Everything else — a user reads **only its own entry**; the optional readonly
+  account (`LDAP_READONLY_USER`) reads the whole tree; everyone else is denied.
+
+The `cn=admin,<base>` rootdn bypasses ACLs for administration. Tighten or widen
+by mounting your own `cn=config` ACL LDIF into `/overlays`.
 
 ## Directory layout
 
