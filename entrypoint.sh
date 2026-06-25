@@ -81,13 +81,15 @@ setup_tls() {
         GEN=/etc/ldap/certs
         mkdir -p "$GEN"
         CN="$(hostname -f 2>/dev/null || echo ldap)"
-        openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
+        # rsa:2048 and no DH params: fast to generate (matters on slow/low-entropy
+        # CI hosts) and fine for a throwaway dev/CI cert — modern TLS negotiates
+        # ECDHE, so explicit DH params are not needed. Mount real certs for prod.
+        openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
             -subj "/CN=$CN" \
             -keyout "$GEN/ldap.key" -out "$GEN/ldap.crt" 2>/dev/null
         cp "$GEN/ldap.crt" "$GEN/ca.crt"
-        openssl dhparam -out "$GEN/dhparam.pem" 2048 2>/dev/null
         TLS_CRT="$GEN/ldap.crt"; TLS_KEY="$GEN/ldap.key"
-        TLS_CA="$GEN/ca.crt";   TLS_DH="$GEN/dhparam.pem"
+        TLS_CA="$GEN/ca.crt";   TLS_DH=""
         chown -R openldap:openldap "$GEN"
     else
         log "Using mounted TLS certificates from $CERTS_DIR"

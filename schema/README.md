@@ -15,3 +15,12 @@ Two formats are supported:
 Both are applied **only on first boot**. To add a schema to an already-populated
 config volume, load it manually with `ldapmodify`/`ldapadd` against the running
 server.
+
+## Baked-in
+
+- **`openssh-lpk.schema`** — the `ldapPublicKey` objectClass + `sshPublicKey`
+  attribute, so SSH public keys can be stored on accounts and fetched by `sshd`
+  (`AuthorizedKeysCommand` / `sss_ssh_authorizedkeys`).
+
+> Mounting your own volume at `/schema` **replaces** this directory, so re-add
+> any baked schema you still need, or mount individual files instead.

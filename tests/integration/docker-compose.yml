@@ -17,7 +17,9 @@ services:
       LDAP_TLS_VERIFY_CLIENT: "never"
       LDAP_LOG_LEVEL: "256"
     volumes:
-      - ./fixtures/schema:/schema:ro
+      # Mount the custom test schema as a single file so the image's baked
+      # /schema (e.g. openssh-lpk.schema) is not shadowed by the bind mount.
+      - ./fixtures/schema/99-test.ldif:/schema/99-test.ldif:ro
       - ./fixtures/overlays:/overlays:ro
       - ./fixtures/bootstrap:/bootstrap:ro
     ports:

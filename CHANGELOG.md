@@ -12,7 +12,8 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - Hybrid bootstrap entrypoint compatible with the osixia env contract
   (`LDAP_DOMAIN`, `LDAP_ORGANISATION`, `LDAP_ADMIN_PASSWORD`,
   `LDAP_CONFIG_PASSWORD`, `LDAP_READONLY_USER*`, `LDAP_TLS*`, `LDAP_LOG_LEVEL`).
-- Custom schema loading from `/schema` (`*.schema` and `*.ldif`).
+- Custom schema loading from `/schema` (`*.schema` and `*.ldif`); the
+  `openssh-lpk` schema (`sshPublicKey`) is baked in.
 - `memberof` + `refint` overlays enabled by default (osixia parity, toggles
   `LDAP_MEMBEROF` / `LDAP_REFINT`), configured for `groupOfUniqueNames` /
   `uniqueMember`; `memberOf` is indexed.

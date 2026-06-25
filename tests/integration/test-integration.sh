@@ -31,7 +31,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=36
+TOTAL=37
 
 cleanup() {
     echo ""
@@ -109,7 +109,7 @@ cd "$SCRIPT_DIR"
 IMAGE_NAME="$IMAGE_NAME" IMAGE_TAG="$IMAGE_TAG" docker compose up -d
 
 echo "Waiting for slapd to be ready..."
-if ! wait_for_ldap 60; then
+if ! wait_for_ldap 120; then
     fail "slapd did not start"
     echo ""; echo "=== Results: $PASS passed, $FAIL failed ==="; exit 1
 fi
@@ -481,6 +481,24 @@ if [ "${RPW_PWREAD:-0}" -ge 1 ] && [ "${RPW_SEES:-0}" = "${ADMIN_SEES:-0}" ] && 
     pass "readpw reads userPassword ($RPW_PWREAD) and all $RPW_SEES users, write denied"
 else
     fail "readpw wrong (pwRead=$RPW_PWREAD sees=$RPW_SEES vs admin=$ADMIN_SEES write=$RPW_WRITE)"
+fi
+
+# ── Baked schema: openssh-lpk ───────────────────────────────────────────────
+echo "[37/$TOTAL] openssh-lpk schema baked in (sshPublicKey usable)"
+SSHKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlyexamplekeyvalue000000 svc@example.test"
+docker exec -i "$CONTAINER" ldapmodify -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF
+dn: cn=ffoster,ou=people,$BASE
+changetype: modify
+add: objectClass
+objectClass: ldapPublicKey
+-
+add: sshPublicKey
+sshPublicKey: $SSHKEY
+EOF
+if dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=ffoster,ou=people,$BASE" -s base sshPublicKey 2>/dev/null | grep -q "ssh-ed25519"; then
+    pass "added ldapPublicKey + sshPublicKey and read it back"
+else
+    fail "openssh-lpk schema not available (sshPublicKey could not be stored)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

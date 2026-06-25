@@ -47,7 +47,8 @@ volumes:
 - OpenLDAP 2.6.13 (LTS) from official Symas packages — version decoupled from Debian's `slapd`
 - `cn=config` (dynamic) backend, `mdb` data store
 - First-boot bootstrap driven by environment variables (osixia-compatible)
-- Custom schema loading from `/schema` (`*.schema` and `*.ldif`)
+- Custom schema loading from `/schema` (`*.schema` and `*.ldif`); `openssh-lpk`
+  (`sshPublicKey`) baked in
 - `memberof` + `refint` overlays enabled by default (osixia parity), plus
   `/overlays` for more (e.g. ppolicy)
 - Initial data load from `/bootstrap` (`*.ldif`)
