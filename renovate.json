@@ -1,47 +1,72 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "automerge": true,
   "automergeType": "pr",
   "platformAutomerge": false,
-  "customDatasources": {
-    "openldap-eol": {
-      "defaultRegistryUrlTemplate": "https://endoflife.date/api/openldap.json",
-      "format": "json",
-      "transformTemplates": [
-        "{ \"releases\": [ { \"version\": $[cycle=\"2.6\"].latest } ] }"
-      ]
-    }
-  },
   "customManagers": [
     {
       "customType": "regex",
-      "description": "OpenLDAP source version pin (Dockerfile / Makefile / README)",
+      "description": "Pinned Symas OpenLDAP package revision (the exact .deb installed), tracked from the Symas apt repo",
       "managerFilePatterns": [
         "/^Dockerfile$/",
-        "/^Makefile$/",
-        "/^README\\.md$/"
+        "/^Makefile$/"
       ],
       "matchStrings": [
-        "ARG OPENLDAP_VERSION=(?<currentValue>\\S+)",
-        "# renovate: openldap\\nOPENLDAP_VERSION \\?= (?<currentValue>\\S+)",
-        "# renovate: openldap\\n.*?openldap:(?<currentValue>[\\d.]+)"
+        "(?m)^ARG SYMAS_VERSION=(?<currentValue>\\S+)",
+        "(?m)^SYMAS_VERSION\\s+\\?=\\s+(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "symas-openldap-server",
+      "packageNameTemplate": "symas-openldap-server",
+      "datasourceTemplate": "deb",
+      "registryUrlTemplate": "https://repo.symas.com/repo/deb/main/release26?suite=trixie&components=main&binaryArch=amd64",
+      "versioningTemplate": "deb"
+    },
+    {
+      "customType": "regex",
+      "description": "Upstream OpenLDAP version (image tag / label), derived from the same Symas package",
+      "managerFilePatterns": [
+        "/^Dockerfile$/",
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "(?m)^ARG OPENLDAP_VERSION=(?<currentValue>\\S+)",
+        "(?m)^OPENLDAP_VERSION \\?= (?<currentValue>\\S+)"
       ],
       "depNameTemplate": "openldap",
-      "datasourceTemplate": "custom.openldap-eol"
+      "packageNameTemplate": "symas-openldap-server",
+      "datasourceTemplate": "deb",
+      "registryUrlTemplate": "https://repo.symas.com/repo/deb/main/release26?suite=trixie&components=main&binaryArch=amd64",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)",
+      "versioningTemplate": "loose"
     }
   ],
   "packageRules": [
     {
-      "description": "OpenLDAP bumps need the pinned Symas package revision refreshed (make bump-openldap), so do not automerge — CI fails the PR until SYMAS_VERSION matches an installable package.",
-      "matchDatasources": ["custom.openldap-eol"],
+      "description": "Group both OpenLDAP pins into one PR; not automerged — the build must pass with the new Symas version, and `make bump-openldap` keeps the two pins in sync.",
+      "matchPackageNames": [
+        "symas-openldap-server"
+      ],
       "groupName": "openldap version",
       "automerge": false
     },
     {
+      "description": "Track only the 2.6 LTS line.",
+      "matchPackageNames": [
+        "symas-openldap-server"
+      ],
+      "allowedVersions": "/^2\\.6\\./"
+    },
+    {
       "description": "Disable updates for debian:stable / debian:stable-slim (floating tag, always current)",
-      "matchDatasources": ["docker"],
-      "matchDepNames": ["debian"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "debian"
+      ],
       "enabled": false
     }
   ]
