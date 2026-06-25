@@ -27,6 +27,7 @@ services:
       LDAP_READONLY_USER: "true"
       LDAP_READONLY_USER_PASSWORD: "readonly-pw"
       LDAP_TLS: "true"
+      TZ: "Europe/Berlin"
     ports:
       - "389:389"
       - "636:636"
@@ -87,6 +88,8 @@ starts reuse the persisted `cn=config`.
 | `LDAP_TLS_WATCH` | `false` | Watch the cert file and hot-reload slapd on renewal |
 | `LDAP_TLS_WATCH_INTERVAL` | `3600` | Cert-watch poll interval (seconds) |
 | `LDAP_LOG_LEVEL` | `256` | slapd log level |
+| `TZ` | _(UTC)_ | Container timezone, e.g. `Europe/Berlin` (affects log timestamps) |
+| `LANG` | `C.UTF-8` | Locale; non-default locales are generated on first boot |
 
 ### TLS
 
@@ -200,6 +203,15 @@ employs the OpenLDAP core team and is the project's commercial steward). We are
 For maximum durability you can also vendor the exact pinned `.deb` files
 (e.g. attach them to a GitHub Release) so a build reproduces even without the
 Symas repo.
+
+## Upgrading
+
+Within the 2.6 LTS line (e.g. `2.6.13` → `2.6.14`, the bumps Renovate proposes),
+the mdb on-disk format is stable, so upgrading is **in place**: pull the new
+image and recreate the container against the existing `*-data` / `*-config`
+volumes — no `slapcat`/`slapadd` dump-and-reload needed. Snapshot the volumes
+first (the `restic` backup). Major upgrades from 2.4/2.5 are a different story —
+see [MIGRATION.md](MIGRATION.md).
 
 ## Migrating from osixia/openldap
 

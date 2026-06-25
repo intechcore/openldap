@@ -65,6 +65,34 @@ LDAPI_URL="ldapi://%2Frun%2Fslapd%2Fldapi"
 # Derive the base DN from the domain: intechcore.online -> dc=intechcore,dc=online
 LDAP_BASE_DN="${LDAP_BASE_DN:-dc=$(echo "$LDAP_DOMAIN" | sed 's/\./,dc=/g')}"
 
+# ─── Locale & timezone ──────────────────────────────────────────────────────
+# TZ sets the container's timezone (affects slapd/entrypoint log timestamps).
+# LANG selects the locale; C.UTF-8 is the always-available UTF-8 default, other
+# locales are generated on first boot. Runs as root, before slapd starts.
+setup_locale_tz() {
+    if [ -n "${TZ:-}" ]; then
+        if [ -f "/usr/share/zoneinfo/$TZ" ]; then
+            ln -sf "/usr/share/zoneinfo/$TZ" /etc/localtime
+            echo "$TZ" > /etc/timezone
+            log "Timezone set to $TZ"
+        else
+            log "WARNING: unknown timezone '$TZ' (no /usr/share/zoneinfo/$TZ) — ignoring"
+        fi
+    fi
+
+    case "${LANG:-}" in
+        ""|C|C.UTF-8|C.utf8|POSIX) ;;  # always available, nothing to generate
+        *)
+            want="$(echo "$LANG" | sed 's/\.UTF-8$/.utf8/I')"
+            if ! locale -a 2>/dev/null | grep -qix "$want"; then
+                log "Generating locale $LANG"
+                echo "$LANG ${LANG##*.}" >> /etc/locale.gen
+                locale-gen >/dev/null 2>&1 || log "  (locale-gen failed for $LANG)"
+            fi
+            ;;
+    esac
+}
+
 # ─── TLS material ───────────────────────────────────────────────────────────
 # Prefer mounted certs in $CERTS_DIR; fall back to self-signed (handy for
 # dev/CI). For persistent TLS in production, always mount real certificates.
@@ -387,6 +415,8 @@ watch_tls_certs() {
 }
 
 # ─── Main ───────────────────────────────────────────────────────────────────
+setup_locale_tz
+
 mkdir -p /run/slapd
 chown -R openldap:openldap /run/slapd
 

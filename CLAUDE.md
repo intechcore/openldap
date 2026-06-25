@@ -76,10 +76,17 @@ See the "Where the binaries come from" section in README.md.
 - Image tag = bundled OpenLDAP version + build suffix (`2.6.13-1`).
 - `OPENLDAP_VERSION` is the upstream version (tag/label); `SYMAS_VERSION` is the
   exact pinned apt revision actually installed (e.g. `2.6.13-3trixie1`).
-- renovate tracks new 2.6 releases via the `endoflife.date` custom datasource
-  (bumps `OPENLDAP_VERSION`). A version bump PR is **not** automerged — refresh
-  the Symas package revision with `make bump-openldap V=<version>`, which resolves
-  the matching `SYMAS_VERSION` from the Symas repo (CI fails until it installs).
+- renovate tracks new releases via the **`deb` datasource on the Symas apt repo**
+  (`renovate.json`): `SYMAS_VERSION` is the full package revision, `OPENLDAP_VERSION`
+  is derived from the same package via `extractVersion`, both grouped into one
+  non-automerged "openldap version" PR (2.6 line only). `make bump-openldap
+  V=<version>` does the same resolution manually. (The old `endoflife.date`
+  datasource was dropped — endoflife no longer tracks openldap.)
+- Point-release upgrades (2.6.x→2.6.y) are safe in place (mdb format stable); the
+  data volume is reused, no slapcat/slapadd. See README "Upgrading".
+- `TZ` sets the timezone (entrypoint symlinks `/etc/localtime`); `LANG` selects
+  the locale (`C.UTF-8` default; others generated on first boot via `locale-gen`).
+  `tzdata` + `locales` are installed in the image.
 
 ## Common commands
 

@@ -29,6 +29,8 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - Overlay/`cn=config` loading from `/overlays` on first boot (e.g. ppolicy);
   the mdb backend is placed at `olcDatabase={1}mdb,cn=config`.
 - Initial data bootstrap from `/bootstrap` (`*.ldif`).
+- Timezone (`TZ`) and locale (`LANG`, default `C.UTF-8`; others generated on
+  first boot) support — `tzdata` and `locales` are installed in the image.
 - TLS via mounted certificates in `/container/certs`, with a self-signed
   fallback for dev/CI.
 - TLS certificate hot-reload without a restart: the `reload-tls` helper and an

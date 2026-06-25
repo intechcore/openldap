@@ -31,10 +31,10 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=58
+TOTAL=60
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -784,6 +784,32 @@ if $CC_OK && $CC_NOCERT && $CC_WITHCERT; then
     pass "ldaps rejected without a client cert, accepted with a valid one"
 else
     fail "mutual TLS wrong (ready=$CC_OK noCertRejected=$CC_NOCERT withCert=$CC_WITHCERT)"
+fi
+
+# ── Locale & timezone ───────────────────────────────────────────────────────
+echo "[59/$TOTAL] default locale is UTF-8"
+LANG_VAL=$(docker exec "$CONTAINER" sh -c 'printf %s "$LANG"' 2>/dev/null)
+CHARMAP=$(docker exec "$CONTAINER" locale charmap 2>/dev/null)
+if [ "$CHARMAP" = "UTF-8" ] && echo "$LANG_VAL" | grep -qi 'UTF-8'; then
+    pass "LANG=$LANG_VAL, charmap=$CHARMAP"
+else
+    fail "default locale is not UTF-8 (LANG=$LANG_VAL charmap=$CHARMAP)"
+fi
+
+echo "[60/$TOTAL] TZ sets the timezone and a non-default locale is generated"
+docker rm -f openldap-loctz >/dev/null 2>&1 || true
+docker run -d --name openldap-loctz -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e TZ=Europe/Berlin -e LANG=en_US.UTF-8 "$IMAGE" >/dev/null 2>&1
+LT_OK=false
+for _ in $(seq 1 90); do docker exec openldap-loctz ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { LT_OK=true; break; }; sleep 1; done
+LT_TZ=$(docker exec openldap-loctz cat /etc/timezone 2>/dev/null)
+LT_ZONE=$(docker exec openldap-loctz date +%Z 2>/dev/null)
+LT_LOC=$(docker exec openldap-loctz sh -c 'locale -a 2>/dev/null | grep -ic "^en_US.utf8$"' 2>/dev/null || true)
+docker rm -f openldap-loctz >/dev/null 2>&1 || true
+if $LT_OK && [ "$LT_TZ" = "Europe/Berlin" ] && echo "$LT_ZONE" | grep -qE 'CES?T' && [ "${LT_LOC:-0}" -ge 1 ]; then
+    pass "TZ=Europe/Berlin (zone $LT_ZONE) and en_US.UTF-8 generated"
+else
+    fail "locale/TZ wrong (ready=$LT_OK tz=$LT_TZ zone=$LT_ZONE en_US=$LT_LOC)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

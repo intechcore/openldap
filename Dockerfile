@@ -43,6 +43,8 @@ RUN apt-get update && \
         > /etc/apt/sources.list.d/soldap-release26.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
+        tzdata \
+        locales \
         "symas-openldap-server=${SYMAS_VERSION}" \
         "symas-openldap-clients=${SYMAS_VERSION}" && \
     apt-get purge -y curl && \
@@ -55,6 +57,11 @@ RUN apt-get update && \
 # Symas layout: slapd in lib/ (symlinked into sbin above), slap* admin tools in
 # sbin, ldap* clients in bin.
 ENV PATH="/opt/symas/bin:/opt/symas/sbin:${PATH}"
+
+# Default to a UTF-8 locale (always available, no generation needed). Override
+# with LANG=<locale> (the entrypoint generates it on first boot if missing), and
+# set the zone with TZ=<Area/City>.
+ENV LANG=C.UTF-8
 
 # Runtime directories:
 #   /container/certs  — mount TLS certs here (compat with the old osixia layout)
