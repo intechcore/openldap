@@ -9,6 +9,12 @@ OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
 `osixia/openldap`. Same repo conventions as `intechcore/nginx-geoip` and
 `intechcore/subversion-ldap-httpd`.
 
+Resilience: not locked into Symas — OpenLDAP source is canonical at openldap.org,
+and the previous from-source build (compile a pinned tarball + SHA256) lives in
+git history (`90ab985:Dockerfile`). If `repo.symas.com` disappears, restore that
+Dockerfile (or vendor the pinned `.deb`s, or fall back to Debian's `slapd`).
+See the "Where the binaries come from" section in README.md.
+
 ## Layout
 
 - `Dockerfile` — single-stage: installs the pinned Symas packages

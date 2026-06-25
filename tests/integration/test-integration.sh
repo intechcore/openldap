@@ -731,7 +731,10 @@ fi
 echo "[56/$TOTAL] a mounted TLS certificate is served (not the self-signed fallback)"
 MNT="$(mktemp -d)"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=mounted-server" -keyout "$MNT/ldap.key" -out "$MNT/ldap.crt" 2>/dev/null
-cp "$MNT/ldap.crt" "$MNT/ca.crt"; chmod 644 "$MNT"/*
+cp "$MNT/ldap.crt" "$MNT/ca.crt"
+# slapd (uid 999) must traverse the mounted dir and read the files; mktemp -d is
+# 0700, which blocks it on Linux (Docker Desktop on macOS masks this).
+chmod 755 "$MNT"; chmod 644 "$MNT"/*
 docker rm -f openldap-mtls >/dev/null 2>&1 || true
 docker run -d --name openldap-mtls -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=never -v "$MNT:/container/certs" "$IMAGE" >/dev/null 2>&1
@@ -764,7 +767,7 @@ openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout "$MT/ldap.key"
 openssl x509 -req -in "$MT/srv.csr" -CA "$MT/ca.crt" -CAkey "$MT/ca.key" -CAcreateserial -days 2 -out "$MT/ldap.crt" 2>/dev/null
 openssl req -newkey rsa:2048 -nodes -subj "/CN=client" -keyout "$MT/client.key" -out "$MT/cli.csr" 2>/dev/null
 openssl x509 -req -in "$MT/cli.csr" -CA "$MT/ca.crt" -CAkey "$MT/ca.key" -CAcreateserial -days 2 -out "$MT/client.crt" 2>/dev/null
-chmod 644 "$MT"/*
+chmod 755 "$MT"; chmod 644 "$MT"/*
 docker rm -f openldap-cca >/dev/null 2>&1 || true
 docker run -d --name openldap-cca -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=demand -v "$MT:/container/certs" "$IMAGE" >/dev/null 2>&1

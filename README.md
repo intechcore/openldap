@@ -181,6 +181,26 @@ Run the **Release** workflow (`workflow_dispatch`). It builds, tests, derives
 the version from `slapd -VV`, and pushes multi-arch tags
 `<version>-<n>`, `<version>`, and `latest` to `ghcr.io/intechcore/openldap`.
 
+## Where the binaries come from (and resilience)
+
+The image installs the official **Symas** OpenLDAP 2.6 LTS packages (Symas
+employs the OpenLDAP core team and is the project's commercial steward). We are
+**not locked in**, because OpenLDAP itself is open source:
+
+- **Canonical source** — [openldap.org](https://www.openldap.org/software/download/)
+  (mirrored). The pinned version + a tarball SHA256 are all that's needed to
+  build from scratch.
+- **From-source fallback** — the previous build compiled OpenLDAP from that
+  source on Debian; it is preserved in git history and can be restored if
+  `repo.symas.com` ever goes away. (Trade-off: slower multi-arch builds — the
+  reason we moved to prebuilt packages.)
+- **Other options** — Debian's own `slapd` package (lags upstream), or the LTB
+  project's builds (RPM only). RHEL no longer ships an OpenLDAP server.
+
+For maximum durability you can also vendor the exact pinned `.deb` files
+(e.g. attach them to a GitHub Release) so a build reproduces even without the
+Symas repo.
+
 ## Migrating from osixia/openldap
 
 See [MIGRATION.md](MIGRATION.md).
