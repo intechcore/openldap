@@ -29,7 +29,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=30
+TOTAL=35
 
 cleanup() {
     echo ""
@@ -383,13 +383,86 @@ else
     fail "TLS floor not enforced (min='$PMIN' tls1.2_cert='$T12')"
 fi
 
-echo "[30/$TOTAL] ACL: a user reads its own entry but not others (osixia self-read-only)"
-SELF=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=asmith,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
-OTHER=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=bjones,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
-if [ "${SELF:-0}" -ge 1 ] && [ "${OTHER:-0}" -eq 0 ]; then
-    pass "asmith reads self ($SELF) but not bjones ($OTHER)"
+# ── Access-control matrix ───────────────────────────────────────────────────
+# Roles: admin (rootdn), readonly (non-admin service account), a regular user
+# (asmith), and anonymous. Helper: count inetOrgPerson entries an identity can
+# see under ou=people. "" DN = anonymous.
+people_seen() {
+    bind=""
+    [ -n "$1" ] && bind="-D $1 -w $2"
+    # shellcheck disable=SC2086
+    docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" $bind \
+        -b "ou=people,$BASE" "(objectClass=inetOrgPerson)" dn 2>/dev/null | grep -c '^dn:' || true
+}
+canread_pw() {
+    docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "$1" -w "$2" \
+        -b "cn=$3,ou=people,$BASE" -s base userPassword 2>/dev/null | grep -c '^userPassword' || true
+}
+
+ADMIN_SEES=$(people_seen "$ADMIN_DN" "$ADMIN_PW")
+
+echo "[30/$TOTAL] admin (rootdn) reads every user entry"
+if [ "${ADMIN_SEES:-0}" -ge 9 ]; then
+    pass "admin sees all $ADMIN_SEES users"
 else
-    fail "self-read-only ACL not enforced (self=$SELF other=$OTHER)"
+    fail "admin should see the whole directory (saw $ADMIN_SEES)"
+fi
+
+echo "[31/$TOTAL] readonly service account (non-admin) reads all users"
+RO_SEES=$(people_seen "$RO_DN" "$RO_PW")
+if [ "${RO_SEES:-0}" = "${ADMIN_SEES:-0}" ] && [ "${RO_SEES:-0}" -ge 9 ]; then
+    pass "readonly sees all $RO_SEES users (same as admin)"
+else
+    fail "readonly should read all users (saw $RO_SEES vs admin $ADMIN_SEES)"
+fi
+
+echo "[32/$TOTAL] a regular user reads its own entry but not another's"
+# With "by self read" a user can read its own entry by DN, but cannot read
+# others (nor enumerate the subtree — the ou=people base is itself denied).
+U_SELF=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=asmith,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
+U_OTHER=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=bjones,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
+U_ENUM=$(people_seen "cn=asmith,ou=people,$BASE" "$USER_PW")
+if [ "${U_SELF:-0}" -ge 1 ] && [ "${U_OTHER:-0}" -eq 0 ] && [ "${U_ENUM:-0}" -eq 0 ]; then
+    pass "asmith reads self ($U_SELF), not bjones ($U_OTHER), cannot enumerate ($U_ENUM)"
+else
+    fail "self-read-only wrong (self=$U_SELF other=$U_OTHER enum=$U_ENUM)"
+fi
+
+echo "[33/$TOTAL] anonymous reads no user entries"
+ANON_SEES=$(people_seen "" "")
+if [ "${ANON_SEES:-0}" = "0" ]; then
+    pass "anonymous sees no user entries"
+else
+    fail "anonymous should see nothing under ou=people (saw $ANON_SEES)"
+fi
+
+echo "[34/$TOTAL] userPassword is private (admin yes; readonly/other user no)"
+PW_ADMIN=$(canread_pw "$ADMIN_DN" "$ADMIN_PW" asmith)
+PW_RO=$(canread_pw "$RO_DN" "$RO_PW" asmith)
+PW_OTHER=$(canread_pw "cn=bjones,ou=people,$BASE" "$USER_PW" asmith)
+if [ "${PW_ADMIN:-0}" -ge 1 ] && [ "${PW_RO:-0}" -eq 0 ] && [ "${PW_OTHER:-0}" -eq 0 ]; then
+    pass "only admin can read userPassword (admin=$PW_ADMIN ro=$PW_RO other=$PW_OTHER)"
+else
+    fail "userPassword privacy wrong (admin=$PW_ADMIN ro=$PW_RO other=$PW_OTHER)"
+fi
+
+echo "[35/$TOTAL] a regular user may change its own password but not edit its entry"
+# self can change own password (write on userPassword)
+PWOK=false; ATTROK=false
+docker exec "$CONTAINER" ldappasswd -x -H "$LDAPI" -D "cn=cmiller,ou=people,$BASE" -w "$USER_PW" -s NewSecret789 >/dev/null 2>&1 \
+    && uwhoami cmiller NewSecret789 && PWOK=true
+# self may NOT modify other attributes of its own entry (self has read, not write)
+if docker exec -i "$CONTAINER" ldapmodify -x -H "$LDAPI" -D "cn=cmiller,ou=people,$BASE" -w NewSecret789 >/dev/null 2>&1 <<EOF
+dn: cn=cmiller,ou=people,$BASE
+changetype: modify
+replace: mail
+mail: hacked@example.test
+EOF
+then ATTROK=false; else ATTROK=true; fi
+if $PWOK && $ATTROK; then
+    pass "self password change allowed; self attribute edit denied"
+else
+    fail "self-write semantics wrong (pwChange=$PWOK attrEditDenied=$ATTROK)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

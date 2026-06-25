@@ -33,8 +33,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - Pinned Symas package revision (`SYMAS_VERSION`); renovate tracks new 2.6
   releases and `make bump-openldap` resolves the matching package version.
 - Integration suite covering ppolicy (lockout, account disable via
-  pwdAccountLockedTime) and CRUD, plus a 2.4→2.6 migration test
-  (`test-migration.sh`) that reimports an osixia/openldap:1.5.0 export.
+  pwdAccountLockedTime), CRUD, memberof/refint, and a full access-control matrix
+  (admin / readonly service account / regular user / anonymous), plus a 2.4→2.6
+  migration test (`test-migration.sh`) that reimports an osixia/openldap:1.5.0
+  export.
 - CI: build + integration + migration tests, hadolint/shellcheck lint, Trivy
   scan, multi-arch (`amd64`/`arm64`) release to ghcr.io.
 - `MIGRATION.md` with the slapcat → strip → reimport recipe from osixia.
