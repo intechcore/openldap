@@ -49,7 +49,8 @@ volumes:
 - `cn=config` (dynamic) backend, `mdb` data store
 - First-boot bootstrap driven by environment variables (osixia-compatible)
 - Custom schema loading from `/schema` (`*.schema` and `*.ldif`); `openssh-lpk`
-  (`sshPublicKey`) baked in
+  (`sshPublicKey`) baked in; optional `rfc2307bis` (`LDAP_RFC2307BIS`) for unified
+  web + Linux/SSSD accounts
 - `memberof` + `refint` overlays enabled by default (osixia parity), plus
   `/overlays` for more (e.g. ppolicy)
 - Initial data load from `/bootstrap` (`*.ldif`)
@@ -81,6 +82,7 @@ starts reuse the persisted `cn=config`.
 | `LDAP_UNIQUE` | `false` | Enable the unique overlay (reject duplicate attribute values) |
 | `LDAP_UNIQUE_ATTRIBUTES` | `mail uid` | Attributes the unique overlay enforces |
 | `LDAP_PASSWORD_HASH` | `{SSHA}` | Hash for new passwords (`{ARGON2}`, `{PBKDF2-SHA512}`, `{SSHA512}`, …) |
+| `LDAP_RFC2307BIS` | `false` | Load the rfc2307bis schema instead of `nis` (POSIX as AUXILIARY) |
 | `LDAP_TLS` | `false` | Enable `ldaps://` + StartTLS |
 | `LDAP_TLS_CRT_FILENAME` | `ldap.crt` | Cert filename in `/container/certs` |
 | `LDAP_TLS_KEY_FILENAME` | `ldap.key` | Key filename |

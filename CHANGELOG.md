@@ -24,6 +24,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - Configurable password hash (`LDAP_PASSWORD_HASH`, default `{SSHA}`):
   `{ARGON2}`, `{PBKDF2-SHA512}`, `{SSHA512}`, … with the matching module loaded
   automatically; existing hashes keep working (lazy migration).
+- Optional `rfc2307bis` schema (`LDAP_RFC2307BIS`) loaded in place of `nis`,
+  making `posixAccount`/`posixGroup` AUXILIARY so one entry can be both an
+  inetOrgPerson and a POSIX account/group (unified web + Linux/SSSD directory).
 - ppolicy module (and its `pwdPolicy` schema) loaded by default, so the schema
   is available without activating the overlay.
 - TLS hardened by default: minimum TLS 1.2 (`LDAP_TLS_PROTOCOL_MIN`, default

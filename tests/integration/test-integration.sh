@@ -31,10 +31,10 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=65
+TOTAL=67
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -923,6 +923,56 @@ if $AR_OK && echo "$AR_HASH" | grep -q '{ARGON2}' && $AR_BIND; then
     pass "password stored as {ARGON2} and binds"
 else
     fail "argon2 scheme not applied (ready=$AR_OK hash='$(echo "$AR_HASH" | cut -c1-12)' bind=$AR_BIND)"
+fi
+
+# ── rfc2307bis schema ───────────────────────────────────────────────────────
+echo "[66/$TOTAL] LDAP_RFC2307BIS allows unified POSIX user + group entries"
+docker rm -f openldap-bis >/dev/null 2>&1 || true
+docker run -d --name openldap-bis -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin -e LDAP_RFC2307BIS=true "$IMAGE" >/dev/null 2>&1
+BIS_OK=false
+for _ in $(seq 1 90); do docker exec openldap-bis ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { BIS_OK=true; break; }; sleep 1; done
+BIS_USER=false; BIS_GROUP=false
+docker exec -i openldap-bis ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF && BIS_USER=true
+dn: cn=puser,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+objectClass: posixAccount
+cn: puser
+sn: x
+uid: puser
+uidNumber: 10001
+gidNumber: 10001
+homeDirectory: /home/puser
+EOF
+docker exec -i openldap-bis ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF && BIS_GROUP=true
+dn: cn=pgroup,ou=groups,dc=example,dc=test
+objectClass: groupOfUniqueNames
+objectClass: posixGroup
+cn: pgroup
+gidNumber: 10001
+uniqueMember: cn=puser,ou=people,dc=example,dc=test
+memberUid: puser
+EOF
+docker rm -f openldap-bis >/dev/null 2>&1 || true
+if $BIS_OK && $BIS_USER && $BIS_GROUP; then
+    pass "unified inetOrgPerson+posixAccount and groupOfUniqueNames+posixGroup accepted"
+else
+    fail "rfc2307bis unified entries failed (ready=$BIS_OK user=$BIS_USER group=$BIS_GROUP)"
+fi
+
+echo "[67/$TOTAL] default nis: a unified group is rejected (posixGroup is STRUCTURAL)"
+NIS_REJECTED=false
+docker exec -i "$CONTAINER" ldapadd -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF || NIS_REJECTED=true
+dn: cn=posixg,ou=groups,$BASE
+objectClass: groupOfUniqueNames
+objectClass: posixGroup
+cn: posixg
+gidNumber: 10002
+uniqueMember: cn=asmith,ou=people,$BASE
+EOF
+if $NIS_REJECTED; then
+    pass "groupOfUniqueNames+posixGroup rejected under nis (structural-class chain)"
+else
+    fail "nis unexpectedly accepted a two-structural-class group"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

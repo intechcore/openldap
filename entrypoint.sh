@@ -44,6 +44,11 @@ LDAP_UNIQUE_ATTRIBUTES="${LDAP_UNIQUE_ATTRIBUTES:-mail uid}"
 # working, so switching is a lazy migration.
 LDAP_PASSWORD_HASH="${LDAP_PASSWORD_HASH:-}"
 [ -z "$LDAP_PASSWORD_HASH" ] && LDAP_PASSWORD_HASH='{SSHA}'
+# Load the rfc2307bis schema instead of the standard nis schema (osixia
+# LDAP_RFC2307BIS_SCHEMA equivalent). rfc2307bis makes posixAccount/posixGroup
+# AUXILIARY, so one entry can be both an inetOrgPerson and a POSIX account/group
+# — for unified web + Linux/SSSD directories. They share OIDs, so it is a swap.
+LDAP_RFC2307BIS="${LDAP_RFC2307BIS:-false}"
 LDAP_TLS="${LDAP_TLS:-false}"
 LDAP_TLS_CRT_FILENAME="${LDAP_TLS_CRT_FILENAME:-ldap.crt}"
 LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
@@ -154,9 +159,13 @@ bootstrap_config() {
   by dn.exact=\"cn=$LDAP_READONLY_PW_USERNAME,$LDAP_BASE_DN\" read"
     fi
 
+    # rfc2307bis is a drop-in replacement for nis (same OIDs), not an addition.
+    nis_schema=nis
+    [ "$LDAP_RFC2307BIS" = "true" ] && nis_schema=rfc2307bis
+
     conf="$(mktemp)"
     {
-        for s in core cosine inetorgperson nis; do
+        for s in core cosine inetorgperson "$nis_schema"; do
             echo "include $SCHEMA_BASE/$s.schema"
         done
         for f in "$SCHEMA_DIR"/*.schema; do
