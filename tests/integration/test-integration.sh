@@ -31,10 +31,10 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=60
+TOTAL=62
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -810,6 +810,45 @@ if $LT_OK && [ "$LT_TZ" = "Europe/Berlin" ] && echo "$LT_ZONE" | grep -qE 'CES?T
     pass "TZ=Europe/Berlin (zone $LT_ZONE) and en_US.UTF-8 generated"
 else
     fail "locale/TZ wrong (ready=$LT_OK tz=$LT_TZ zone=$LT_ZONE en_US=$LT_LOC)"
+fi
+
+# ── lastbind overlay ────────────────────────────────────────────────────────
+echo "[61/$TOTAL] lastbind overlay records authTimestamp on a successful bind"
+dadd <<EOF
+dn: cn=lbuser,ou=people,$BASE
+objectClass: inetOrgPerson
+cn: lbuser
+sn: User
+userPassword: $USER_PW
+EOF
+LB_BEFORE=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=lbuser,ou=people,$BASE" -s base authTimestamp 2>/dev/null | grep -c '^authTimestamp:' || true)
+uwhoami lbuser "$USER_PW"
+LB_AFTER=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=lbuser,ou=people,$BASE" -s base authTimestamp 2>/dev/null | grep -c '^authTimestamp:' || true)
+if [ "${LB_BEFORE:-0}" -eq 0 ] && [ "${LB_AFTER:-0}" -ge 1 ]; then
+    pass "authTimestamp absent before, recorded after bind"
+else
+    fail "lastbind did not record authTimestamp (before=$LB_BEFORE after=$LB_AFTER)"
+fi
+
+echo "[62/$TOTAL] lastbind disabled (default): authTimestamp is NOT written"
+docker rm -f openldap-nolb >/dev/null 2>&1 || true
+docker run -d --name openldap-nolb -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+NLB_OK=false
+for _ in $(seq 1 90); do docker exec openldap-nolb ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { NLB_OK=true; break; }; sleep 1; done
+docker exec -i openldap-nolb ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
+dn: cn=nlb,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: nlb
+sn: x
+userPassword: Secret123
+EOF
+docker exec openldap-nolb ldapwhoami -x -H "$LDAPI" -D "cn=nlb,ou=people,dc=example,dc=test" -w Secret123 >/dev/null 2>&1
+NLB_TS=$(docker exec openldap-nolb ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "cn=nlb,ou=people,dc=example,dc=test" -s base authTimestamp 2>/dev/null | grep -c '^authTimestamp:' || true)
+docker rm -f openldap-nolb >/dev/null 2>&1 || true
+if $NLB_OK && [ "${NLB_TS:-1}" -eq 0 ]; then
+    pass "no authTimestamp written when LDAP_LASTBIND is unset"
+else
+    fail "authTimestamp written despite lastbind disabled (ready=$NLB_OK ts=$NLB_TS)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

@@ -53,6 +53,10 @@ See the "Where the binaries come from" section in README.md.
   `uniqueMember`. Loaded in `bootstrap_data` before user `/overlays`; `memberOf`
   is indexed (added at runtime, since the attr is only defined once the module
   loads).
+- Optional `lastbind` overlay (`LDAP_LASTBIND`, default off) records
+  `authTimestamp` on each bind. Note: this Symas build's `olcLastBindConfig` does
+  NOT accept `olcLastBindPrecision`, so the overlay is added bare (writes on
+  every successful bind).
 - The ppolicy module is `moduleload`ed in the generated slapd.conf so its
   `pwdPolicy` schema is available by default (no standalone ppolicy.schema file
   exists in the Symas build); the overlay itself is still opt-in via `/overlays`.

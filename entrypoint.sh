@@ -30,6 +30,10 @@ LDAP_READONLY_PW_PASSWORD="${LDAP_READONLY_PW_PASSWORD:-readpw}"
 # Both are configured exactly as osixia did (groupOfUniqueNames / uniqueMember).
 LDAP_MEMBEROF="${LDAP_MEMBEROF:-true}"
 LDAP_REFINT="${LDAP_REFINT:-true}"
+# Opt-in: the lastbind overlay records the time of each successful bind in the
+# operational attribute authTimestamp (a "last login" timestamp). Off by default
+# — it writes on every successful bind.
+LDAP_LASTBIND="${LDAP_LASTBIND:-false}"
 LDAP_TLS="${LDAP_TLS:-false}"
 LDAP_TLS_CRT_FILENAME="${LDAP_TLS_CRT_FILENAME:-ldap.crt}"
 LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
@@ -308,6 +312,21 @@ olcRefintAttribute: manager
 olcRefintAttribute: uniqueMember
 olcRefintAttribute: member
 olcRefintAttribute: memberOf
+EOF
+    fi
+    if [ "$LDAP_LASTBIND" = "true" ]; then
+        log "Enabling lastbind overlay (records authTimestamp on each bind)"
+        ldapmodify -c -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" >/dev/null 2>&1 <<EOF || log "  (lastbind already configured)"
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: lastbind
+
+dn: olcOverlay=lastbind,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcLastBindConfig
+olcOverlay: lastbind
 EOF
     fi
 

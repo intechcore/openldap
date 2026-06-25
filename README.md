@@ -77,6 +77,7 @@ starts reuse the persisted `cn=config`.
 | `LDAP_READONLY_PW_PASSWORD` | `readpw` | Password-reading account password |
 | `LDAP_MEMBEROF` | `true` | Enable the memberof overlay (reverse `memberOf`) |
 | `LDAP_REFINT` | `true` | Enable the refint overlay (referential integrity) |
+| `LDAP_LASTBIND` | `false` | Enable the lastbind overlay (`authTimestamp` last-login) |
 | `LDAP_TLS` | `false` | Enable `ldaps://` + StartTLS |
 | `LDAP_TLS_CRT_FILENAME` | `ldap.crt` | Cert filename in `/container/certs` |
 | `LDAP_TLS_KEY_FILENAME` | `ldap.key` | Key filename |
@@ -117,6 +118,10 @@ The **memberof** and **refint** overlays are enabled by default (matching
 osixia, configured for `groupOfUniqueNames`/`uniqueMember`): `memberof`
 maintains the reverse `memberOf` attribute, `refint` cleans DN references on
 delete/rename. Disable either with `LDAP_MEMBEROF=false` / `LDAP_REFINT=false`.
+
+Set `LDAP_LASTBIND=true` to also enable the **lastbind** overlay, which records
+the time of each successful bind in the operational `authTimestamp` attribute (a
+"last login" timestamp; note it writes on every successful bind).
 
 Drop additional `cn=config` LDIF files into `/overlays` to enable more overlays
 on first boot (applied before the data load). The data backend is

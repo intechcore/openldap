@@ -17,6 +17,8 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - `memberof` + `refint` overlays enabled by default (osixia parity, toggles
   `LDAP_MEMBEROF` / `LDAP_REFINT`), configured for `groupOfUniqueNames` /
   `uniqueMember`; `memberOf` is indexed.
+- Optional `lastbind` overlay (`LDAP_LASTBIND`) recording `authTimestamp` (last
+  successful bind / "last login").
 - ppolicy module (and its `pwdPolicy` schema) loaded by default, so the schema
   is available without activating the overlay.
 - TLS hardened by default: minimum TLS 1.2 (`LDAP_TLS_PROTOCOL_MIN`, default
