@@ -203,6 +203,7 @@ it; `{ARGON2}` costs more CPU/RAM per bind than `{SSHA}`.
 make build                       # build openldap:2.6.13
 make test                        # build + integration tests (needs docker compose)
 make test-migration              # build + 2.4 -> 2.6 migration test
+make test-arch                   # build linux/arm64 + smoke-test under emulation
 make lint                        # shellcheck + hadolint
 make scan                        # build + trivy scan
 make bump-openldap V=2.6.14      # bump version + resolve Symas package revision

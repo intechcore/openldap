@@ -31,10 +31,10 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=67
+TOTAL=73
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -973,6 +973,132 @@ if $NIS_REJECTED; then
     pass "groupOfUniqueNames+posixGroup rejected under nis (structural-class chain)"
 else
     fail "nis unexpectedly accepted a two-structural-class group"
+fi
+
+# ── Backup/restore, TLS cipher, bind & policy edge cases ────────────────────
+echo "[68/$TOTAL] slapcat backup round-trips through an offline slapadd restore"
+docker rm -f openldap-bksrc >/dev/null 2>&1 || true
+docker run -d --name openldap-bksrc -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_MEMBEROF=false -e LDAP_REFINT=false "$IMAGE" >/dev/null 2>&1
+BK_OK=false
+for _ in $(seq 1 90); do docker exec openldap-bksrc ldapsearch -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "dc=example,dc=test" -s base o >/dev/null 2>&1 && { BK_OK=true; break; }; sleep 1; done
+docker exec -i openldap-bksrc ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
+dn: cn=a,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: a
+sn: x
+
+dn: cn=b,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: b
+sn: y
+EOF
+BK_DUMP="$(mktemp)"
+docker exec openldap-bksrc slapcat -F /etc/ldap/slapd.d -b "dc=example,dc=test" 2>/dev/null > "$BK_DUMP"
+BK_SRC=$(grep -c '^dn:' "$BK_DUMP" || true)
+BK_RESTORED=$(docker run --rm -v "$BK_DUMP:/dump.ldif:ro" --entrypoint "" "$IMAGE" sh -c '
+    SB=/opt/symas/etc/openldap/schema
+    printf "include %s/core.schema\ninclude %s/cosine.schema\ninclude %s/inetorgperson.schema\ninclude %s/nis.schema\nmodulepath /opt/symas/lib/openldap\nmoduleload back_mdb\ndatabase mdb\nsuffix \"dc=example,dc=test\"\ndirectory /tmp/db\n" "$SB" "$SB" "$SB" "$SB" > /tmp/s.conf
+    mkdir -p /tmp/cfg /tmp/db
+    slaptest -f /tmp/s.conf -F /tmp/cfg >/dev/null 2>&1
+    slapadd -F /tmp/cfg -b "dc=example,dc=test" -l /dump.ldif >/dev/null 2>&1
+    slapcat -F /tmp/cfg -b "dc=example,dc=test" 2>/dev/null | grep -c "^dn:"
+' 2>/dev/null || true)
+docker rm -f openldap-bksrc >/dev/null 2>&1 || true
+rm -f "$BK_DUMP"
+if $BK_OK && [ "${BK_SRC:-0}" -ge 5 ] && [ "${BK_RESTORED:-0}" = "${BK_SRC:-0}" ]; then
+    pass "slapadd restored all $BK_RESTORED entries from the slapcat dump"
+else
+    fail "backup round-trip mismatch (src=$BK_SRC restored=$BK_RESTORED)"
+fi
+
+echo "[69/$TOTAL] LDAP_TLS_CIPHER_SUITE is applied and TLS still works"
+docker rm -f openldap-cipher >/dev/null 2>&1 || true
+docker run -d --name openldap-cipher -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=never -e LDAP_TLS_CIPHER_SUITE='HIGH:!aNULL:!MD5:!RC4' "$IMAGE" >/dev/null 2>&1
+CS_OK=false
+for _ in $(seq 1 90); do docker exec openldap-cipher ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { CS_OK=true; break; }; sleep 1; done
+CS_VAL=$(docker exec openldap-cipher ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D cn=admin,cn=config -w admin -b cn=config -s base olcTLSCipherSuite 2>/dev/null | sed -n 's/^olcTLSCipherSuite: //p')
+CS_TLS=$(docker exec openldap-cipher sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
+docker rm -f openldap-cipher >/dev/null 2>&1 || true
+if $CS_OK && [ "$CS_VAL" = 'HIGH:!aNULL:!MD5:!RC4' ] && [ -n "$CS_TLS" ]; then
+    pass "olcTLSCipherSuite honoured and ldaps:// negotiates"
+else
+    fail "cipher suite not applied (set='$CS_VAL' tls='$CS_TLS')"
+fi
+
+echo "[70/$TOTAL] unauthenticated bind (DN + empty password) is rejected"
+if docker exec "$CONTAINER" ldapwhoami -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "" >/dev/null 2>&1; then
+    fail "an unauthenticated bind succeeded"
+else
+    pass "DN + empty password is refused (no unauthenticated bind)"
+fi
+
+echo "[71/$TOTAL] reload-tls is a safe no-op on a non-TLS server"
+docker rm -f openldap-misc >/dev/null 2>&1 || true
+docker run -d --name openldap-misc -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+MI_OK=false
+for _ in $(seq 1 90); do docker exec openldap-misc ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { MI_OK=true; break; }; sleep 1; done
+if $MI_OK && docker exec openldap-misc reload-tls 2>&1 | grep -qi 'not configured'; then
+    pass "reload-tls reports TLS not configured and exits cleanly"
+else
+    fail "reload-tls did not no-op on a non-TLS server (ready=$MI_OK)"
+fi
+
+echo "[72/$TOTAL] LDAP_CONFIG_PASSWORD defaults to the admin password"
+if docker exec openldap-misc ldapwhoami -x -H "$LDAPI" -D "cn=admin,cn=config" -w admin >/dev/null 2>&1; then
+    pass "cn=admin,cn=config binds with the admin password when no config password is set"
+else
+    fail "config rootdn did not accept the admin password as default"
+fi
+docker rm -f openldap-misc >/dev/null 2>&1 || true
+
+echo "[73/$TOTAL] ppolicy: a password past pwdMaxAge (grace 0) is expired"
+PWX_OV="$(mktemp -d)"; PWX_BS="$(mktemp -d)"
+cat > "$PWX_OV/10-ppolicy.ldif" <<EOF
+dn: olcOverlay=ppolicy,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcPPolicyConfig
+olcOverlay: ppolicy
+olcPPolicyDefault: cn=default,ou=policies,dc=example,dc=test
+olcPPolicyHashCleartext: TRUE
+EOF
+cat > "$PWX_BS/20-policy.ldif" <<EOF
+dn: ou=policies,dc=example,dc=test
+objectClass: organizationalUnit
+ou: policies
+
+dn: cn=default,ou=policies,dc=example,dc=test
+objectClass: device
+objectClass: pwdPolicy
+cn: default
+pwdAttribute: userPassword
+pwdMaxAge: 2
+pwdGraceAuthNLimit: 0
+
+dn: cn=exp,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: exp
+sn: x
+userPassword: Secret123
+EOF
+chmod 755 "$PWX_OV" "$PWX_BS"; chmod 644 "$PWX_OV"/* "$PWX_BS"/*
+docker rm -f openldap-pwexp >/dev/null 2>&1 || true
+docker run -d --name openldap-pwexp -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -v "$PWX_OV:/overlays:ro" -v "$PWX_BS:/bootstrap:ro" "$IMAGE" >/dev/null 2>&1
+PX_OK=false
+for _ in $(seq 1 90); do docker exec openldap-pwexp ldapsearch -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "dc=example,dc=test" -s base o >/dev/null 2>&1 && { PX_OK=true; break; }; sleep 1; done
+PX_FRESH=false; PX_EXPIRED=false
+docker exec openldap-pwexp ldapwhoami -x -H "$LDAPI" -D "cn=exp,ou=people,dc=example,dc=test" -w Secret123 >/dev/null 2>&1 && PX_FRESH=true
+sleep 4
+docker exec openldap-pwexp ldapwhoami -x -H "$LDAPI" -D "cn=exp,ou=people,dc=example,dc=test" -w Secret123 >/dev/null 2>&1 || PX_EXPIRED=true
+docker rm -f openldap-pwexp >/dev/null 2>&1 || true
+rm -rf "$PWX_OV" "$PWX_BS"
+if $PX_OK && $PX_FRESH && $PX_EXPIRED; then
+    pass "bind works fresh, then is refused once the password expires"
+else
+    fail "pwdMaxAge expiry wrong (ready=$PX_OK fresh=$PX_FRESH expired=$PX_EXPIRED)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

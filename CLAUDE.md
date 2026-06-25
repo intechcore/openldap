@@ -31,9 +31,10 @@ See the "Where the binaries come from" section in README.md.
 - `examples/letsencrypt/` — certbot DNS-01 sidecar + auto-reload reference.
 - `tests/integration/` — `test-integration.sh` (smoke + e2e: auth, readonly,
   bootstrap, custom schema, TLS + reload, ppolicy, CRUD) and
-  `test-migration.sh` (2.4→2.6 via osixia/openldap:1.5.0 → slapcat → reimport).
-  Anonymized synthetic fixtures under `fixtures/` (people/groups/policies +
-  `overlays/10-ppolicy.ldif`).
+  `test-migration.sh` (2.4→2.6 via osixia/openldap:1.5.0 → slapcat → reimport),
+  and `test-arch.sh` (buildx-builds `linux/arm64` and smoke-tests it under QEMU,
+  since CI otherwise only runs the native amd64 image). Anonymized synthetic
+  fixtures under `fixtures/` (people/groups/policies + `overlays/10-ppolicy.ldif`).
 - `.github/workflows/` — build+test, lint, security (Trivy), release.
 
 ## Key facts

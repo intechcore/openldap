@@ -50,16 +50,18 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   releases and `make bump-openldap` resolves the matching package version.
 - Base-image security updates applied at build time (`apt-get upgrade`) before
   the pinned Symas packages are installed, so the pin is preserved.
-- Integration suite (58 cases) covering ppolicy (lockout, history, min-length,
-  admin unlock, auto-unlock via pwdLockoutDuration, disable via
-  pwdAccountLockedTime), CRUD, memberof/refint (member add/remove, rename, group
-  delete), a full access-control matrix (admin / readonly / password-reading
-  readonly / user / anonymous), indexed search, binary attributes, openssh-lpk,
-  TLS depth (mounted certs, reload-tls renewal, mutual-TLS client cert), plus
-  container behaviour (restart persistence of data + cn=config, bootstrap-skip,
-  healthcheck health, non-root slapd, non-TLS mode, CMD override, base-DN
-  derivation, slapcat backup). A separate 2.4→2.6 migration test
-  (`test-migration.sh`) reimports an osixia/openldap:1.5.0 export.
-- CI: build + integration + migration tests, hadolint/shellcheck lint, Trivy
-  scan, multi-arch (`amd64`/`arm64`) release to ghcr.io.
+- Integration suite (73 cases) covering ppolicy (lockout, history, min-length,
+  admin unlock, auto-unlock, disable via pwdAccountLockedTime, pwdMaxAge expiry),
+  CRUD, memberof/refint, lastbind, unique, password-hash, rfc2307bis, a full
+  access-control matrix (admin / readonly / password-reading readonly / user /
+  anonymous, plus unauthenticated-bind rejection), indexed search, binary
+  attributes, openssh-lpk, TLS depth (mounted certs, reload-tls renewal +
+  non-TLS no-op, mutual-TLS client cert, cipher suite), config-password default,
+  plus container behaviour (restart persistence of data + cn=config,
+  bootstrap-skip, healthcheck health, non-root slapd, non-TLS mode, CMD override,
+  base-DN derivation) and a slapcat → offline slapadd backup round-trip. A
+  2.4→2.6 migration test (`test-migration.sh`) reimports an osixia/openldap:1.5.0
+  export, and `test-arch.sh` smoke-tests the `linux/arm64` image under emulation.
+- CI: build + integration + migration + arm64-smoke tests, hadolint/shellcheck
+  lint, Trivy scan, multi-arch (`amd64`/`arm64`) release to ghcr.io.
 - `MIGRATION.md` with the slapcat → strip → reimport recipe from osixia.

@@ -34,3 +34,6 @@ jobs:
 
       - name: Run 2.4 to 2.6 migration test
         run: ./tests/integration/test-migration.sh openldap:test
+
+      - name: Run arm64 runtime smoke test (emulated)
+        run: ./tests/integration/test-arch.sh linux/arm64 openldap:arm64test

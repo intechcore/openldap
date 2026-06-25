@@ -1,4 +1,4 @@
-.PHONY: build test test-migration lint scan clean bump-openldap
+.PHONY: build test test-migration test-arch lint scan clean bump-openldap
 
 # renovate: openldap
 OPENLDAP_VERSION ?= 2.6.13
@@ -20,6 +20,10 @@ test: build
 # 2.4 → 2.6 migration test (pulls osixia/openldap:1.5.0 as the 2.4 source).
 test-migration: build
 	./tests/integration/test-migration.sh $(IMAGE_NAME):$(IMAGE_TAG)
+
+# Cross-arch runtime smoke (default linux/arm64; needs buildx + QEMU).
+test-arch:
+	./tests/integration/test-arch.sh
 
 lint:
 	shellcheck entrypoint.sh reload-tls.sh tests/integration/*.sh
