@@ -34,6 +34,10 @@ LDAP_REFINT="${LDAP_REFINT:-true}"
 # operational attribute authTimestamp (a "last login" timestamp). Off by default
 # — it writes on every successful bind.
 LDAP_LASTBIND="${LDAP_LASTBIND:-false}"
+# Opt-in: the unique overlay enforces value uniqueness for the listed attributes
+# (e.g. no two entries may share a mail or uid), rejecting duplicate writes.
+LDAP_UNIQUE="${LDAP_UNIQUE:-false}"
+LDAP_UNIQUE_ATTRIBUTES="${LDAP_UNIQUE_ATTRIBUTES:-mail uid}"
 LDAP_TLS="${LDAP_TLS:-false}"
 LDAP_TLS_CRT_FILENAME="${LDAP_TLS_CRT_FILENAME:-ldap.crt}"
 LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
@@ -328,6 +332,25 @@ objectClass: olcOverlayConfig
 objectClass: olcLastBindConfig
 olcOverlay: lastbind
 EOF
+    fi
+    if [ "$LDAP_UNIQUE" = "true" ] && [ -n "$LDAP_UNIQUE_ATTRIBUTES" ]; then
+        log "Enabling unique overlay (attributes: $LDAP_UNIQUE_ATTRIBUTES)"
+        uniq_ldif="dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: unique
+
+dn: olcOverlay=unique,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcUniqueConfig
+olcOverlay: unique"
+        for _attr in $LDAP_UNIQUE_ATTRIBUTES; do
+            uniq_ldif="$uniq_ldif
+olcUniqueURI: ldap:///?${_attr}?sub?"
+        done
+        printf '%s\n' "$uniq_ldif" | ldapmodify -c -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" >/dev/null 2>&1 \
+            || log "  (unique already configured)"
     fi
 
     # Overlay / cn=config customisation (e.g. ppolicy, memberof, refint). These

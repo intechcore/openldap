@@ -31,10 +31,10 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=62
+TOTAL=64
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -849,6 +849,57 @@ if $NLB_OK && [ "${NLB_TS:-1}" -eq 0 ]; then
     pass "no authTimestamp written when LDAP_LASTBIND is unset"
 else
     fail "authTimestamp written despite lastbind disabled (ready=$NLB_OK ts=$NLB_TS)"
+fi
+
+# ── unique overlay ──────────────────────────────────────────────────────────
+echo "[63/$TOTAL] unique overlay rejects a duplicate mail, allows a unique one"
+# asmith already has mail asmith@example.test (fixture) — a duplicate must fail.
+DUP_REJECTED=false; UNIQ_OK=false
+docker exec -i "$CONTAINER" ldapadd -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF || DUP_REJECTED=true
+dn: cn=dupmail,ou=people,$BASE
+objectClass: inetOrgPerson
+cn: dupmail
+sn: x
+mail: asmith@example.test
+EOF
+docker exec -i "$CONTAINER" ldapadd -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF && UNIQ_OK=true
+dn: cn=uniqmail,ou=people,$BASE
+objectClass: inetOrgPerson
+cn: uniqmail
+sn: x
+mail: uniqmail@example.test
+EOF
+if $DUP_REJECTED && $UNIQ_OK; then
+    pass "duplicate mail rejected, unique mail accepted"
+else
+    fail "unique enforcement wrong (dupRejected=$DUP_REJECTED uniqueAccepted=$UNIQ_OK)"
+fi
+
+echo "[64/$TOTAL] unique disabled (default): a duplicate mail is allowed"
+docker rm -f openldap-nouniq >/dev/null 2>&1 || true
+docker run -d --name openldap-nouniq -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+NU_OK=false
+for _ in $(seq 1 90); do docker exec openldap-nouniq ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { NU_OK=true; break; }; sleep 1; done
+docker exec -i openldap-nouniq ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
+dn: cn=a,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: a
+sn: x
+mail: same@example.test
+EOF
+NU_DUP=false
+docker exec -i openldap-nouniq ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF && NU_DUP=true
+dn: cn=b,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: b
+sn: x
+mail: same@example.test
+EOF
+docker rm -f openldap-nouniq >/dev/null 2>&1 || true
+if $NU_OK && $NU_DUP; then
+    pass "duplicate mail accepted when LDAP_UNIQUE is unset"
+else
+    fail "unexpected enforcement with unique disabled (ready=$NU_OK dupAccepted=$NU_DUP)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

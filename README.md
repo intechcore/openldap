@@ -78,6 +78,8 @@ starts reuse the persisted `cn=config`.
 | `LDAP_MEMBEROF` | `true` | Enable the memberof overlay (reverse `memberOf`) |
 | `LDAP_REFINT` | `true` | Enable the refint overlay (referential integrity) |
 | `LDAP_LASTBIND` | `false` | Enable the lastbind overlay (`authTimestamp` last-login) |
+| `LDAP_UNIQUE` | `false` | Enable the unique overlay (reject duplicate attribute values) |
+| `LDAP_UNIQUE_ATTRIBUTES` | `mail uid` | Attributes the unique overlay enforces |
 | `LDAP_TLS` | `false` | Enable `ldaps://` + StartTLS |
 | `LDAP_TLS_CRT_FILENAME` | `ldap.crt` | Cert filename in `/container/certs` |
 | `LDAP_TLS_KEY_FILENAME` | `ldap.key` | Key filename |
@@ -122,6 +124,10 @@ delete/rename. Disable either with `LDAP_MEMBEROF=false` / `LDAP_REFINT=false`.
 Set `LDAP_LASTBIND=true` to also enable the **lastbind** overlay, which records
 the time of each successful bind in the operational `authTimestamp` attribute (a
 "last login" timestamp; note it writes on every successful bind).
+
+Set `LDAP_UNIQUE=true` to enable the **unique** overlay, which rejects writes
+that would duplicate a value of the attributes in `LDAP_UNIQUE_ATTRIBUTES`
+(default `mail uid`) — e.g. two accounts can't share an email address.
 
 Drop additional `cn=config` LDIF files into `/overlays` to enable more overlays
 on first boot (applied before the data load). The data backend is

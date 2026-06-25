@@ -57,6 +57,9 @@ See the "Where the binaries come from" section in README.md.
   `authTimestamp` on each bind. Note: this Symas build's `olcLastBindConfig` does
   NOT accept `olcLastBindPrecision`, so the overlay is added bare (writes on
   every successful bind).
+- Optional `unique` overlay (`LDAP_UNIQUE`, attrs `LDAP_UNIQUE_ATTRIBUTES`,
+  default `mail uid`) rejects duplicate values (one `olcUniqueURI:
+  ldap:///?<attr>?sub?` per attribute, enforced even for rootdn writes).
 - The ppolicy module is `moduleload`ed in the generated slapd.conf so its
   `pwdPolicy` schema is available by default (no standalone ppolicy.schema file
   exists in the Symas build); the overlay itself is still opt-in via `/overlays`.

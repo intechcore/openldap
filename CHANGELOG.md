@@ -19,6 +19,8 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   `uniqueMember`; `memberOf` is indexed.
 - Optional `lastbind` overlay (`LDAP_LASTBIND`) recording `authTimestamp` (last
   successful bind / "last login").
+- Optional `unique` overlay (`LDAP_UNIQUE`, attributes via
+  `LDAP_UNIQUE_ATTRIBUTES`, default `mail uid`) rejecting duplicate values.
 - ppolicy module (and its `pwdPolicy` schema) loaded by default, so the schema
   is available without activating the overlay.
 - TLS hardened by default: minimum TLS 1.2 (`LDAP_TLS_PROTOCOL_MIN`, default
