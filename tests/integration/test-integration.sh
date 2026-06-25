@@ -21,13 +21,15 @@ CONTAINER="openldap-integration-test"
 BASE="dc=example,dc=test"
 ADMIN_DN="cn=admin,${BASE}"
 ADMIN_PW="adminpw"
+CONFIG_PW="configpw"
 RO_DN="cn=readonly,${BASE}"
 RO_PW="ropw"
+USER_PW="Secret123"   # shared fixture password (see fixtures/bootstrap/21-people.ldif)
 LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=16
+TOTAL=24
 
 cleanup() {
     echo ""
@@ -230,6 +232,112 @@ if echo "$SUBJ_AFTER" | grep -q "CN=renewed.example.test" && [ "$SUBJ_BEFORE" !=
     pass "renewed cert served after reload-tls (no restart)"
 else
     fail "cert not reloaded (before='$SUBJ_BEFORE' after='$SUBJ_AFTER')"
+fi
+
+# ── Schema extension (ppolicy) + realistic data + CRUD ──────────────────────
+# Helpers that run a write op from stdin inside the container.
+dmodify() { docker exec -i "$CONTAINER" ldapmodify -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1; }
+dadd()    { docker exec -i "$CONTAINER" ldapadd    -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1; }
+uwhoami() { docker exec "$CONTAINER" ldapwhoami -x -H "$LDAPI" -D "cn=$1,ou=people,$BASE" -w "$2" >/dev/null 2>&1; }
+
+echo "[17/$TOTAL] ppolicy overlay loaded from /overlays + default policy present"
+OV=$(docker exec "$CONTAINER" ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" \
+        -D "cn=admin,cn=config" -w "$CONFIG_PW" -b "cn=config" "(olcOverlay=ppolicy)" dn 2>/dev/null)
+POL=$(dsearch -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=default,ou=policies,$BASE" -s base pwdLockout 2>/dev/null)
+if echo "$OV" | grep -qi "olcOverlay=.*ppolicy,olcDatabase={1}mdb" && echo "$POL" | grep -qi "pwdLockout: TRUE"; then
+    pass "ppolicy active on {1}mdb + default policy present"
+else
+    fail "ppolicy overlay or default policy missing"
+fi
+
+echo "[18/$TOTAL] realistic dataset loaded (inetOrgPerson + groupOfUniqueNames)"
+NPEOPLE=$(dsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(objectClass=inetOrgPerson)" dn 2>/dev/null | grep -c '^dn:')
+NMEMB=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=everyone,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -c '^uniqueMember:')
+if [ "${NPEOPLE:-0}" -ge 11 ] && [ "${NMEMB:-0}" -ge 11 ]; then
+    pass "people=$NPEOPLE, group 'everyone' members=$NMEMB"
+else
+    fail "dataset incomplete (people=$NPEOPLE, members=$NMEMB)"
+fi
+
+echo "[19/$TOTAL] a fixture user can bind with its password"
+if uwhoami asmith "$USER_PW"; then
+    pass "asmith bind works (ppolicy hashed the cleartext on add)"
+else
+    fail "asmith bind failed"
+fi
+
+echo "[20/$TOTAL] CRUD: add, modify, read back, delete a user"
+CRUD_OK=true
+dadd <<EOF || CRUD_OK=false
+dn: cn=tuser,ou=people,$BASE
+objectClass: inetOrgPerson
+cn: tuser
+sn: User
+displayName: Temp User
+mail: tuser@example.test
+userPassword: $USER_PW
+EOF
+dmodify <<EOF || CRUD_OK=false
+dn: cn=tuser,ou=people,$BASE
+changetype: modify
+replace: mail
+mail: changed@example.test
+EOF
+dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=tuser,ou=people,$BASE" mail 2>/dev/null | grep -qi "changed@example.test" || CRUD_OK=false
+docker exec "$CONTAINER" ldapdelete -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" "cn=tuser,ou=people,$BASE" >/dev/null 2>&1 || CRUD_OK=false
+# A base search on the deleted DN must now fail (no such object).
+docker exec "$CONTAINER" ldapsearch -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=tuser,ou=people,$BASE" -s base dn >/dev/null 2>&1 && CRUD_OK=false
+if $CRUD_OK; then pass "add/modify/read/delete cycle works"; else fail "CRUD cycle failed"; fi
+
+echo "[21/$TOTAL] CRUD: add a member to a group"
+dmodify <<EOF
+dn: cn=testers,ou=groups,$BASE
+changetype: modify
+add: uniqueMember
+uniqueMember: cn=zmuller,ou=people,$BASE
+EOF
+if dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=testers,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -qi "cn=zmuller,"; then
+    pass "uniqueMember added to cn=testers"
+else
+    fail "group membership update failed"
+fi
+
+echo "[22/$TOTAL] CRUD: change a user's password (ldappasswd) and bind with it"
+if docker exec "$CONTAINER" ldappasswd -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" \
+        -s NewSecret456 "cn=ggreen,ou=people,$BASE" >/dev/null 2>&1 \
+        && uwhoami ggreen NewSecret456 && ! uwhoami ggreen "$USER_PW"; then
+    pass "password changed; new password binds, old one rejected"
+else
+    fail "password change/bind failed"
+fi
+
+echo "[23/$TOTAL] ppolicy: account locks after repeated bad binds"
+for _ in 1 2 3; do uwhoami jkent wrong-pw || true; done
+if uwhoami jkent "$USER_PW"; then
+    fail "account not locked after 3 failed binds"
+else
+    pass "account locked after pwdMaxFailure failed binds"
+fi
+
+echo "[24/$TOTAL] ppolicy: disable/enable a user via pwdAccountLockedTime"
+DISABLED=false; ENABLED=false
+dmodify <<EOF
+dn: cn=hhill,ou=people,$BASE
+changetype: modify
+replace: pwdAccountLockedTime
+pwdAccountLockedTime: 20200101000000Z
+EOF
+uwhoami hhill "$USER_PW" || DISABLED=true
+dmodify <<EOF
+dn: cn=hhill,ou=people,$BASE
+changetype: modify
+delete: pwdAccountLockedTime
+EOF
+uwhoami hhill "$USER_PW" && ENABLED=true
+if $DISABLED && $ENABLED; then
+    pass "pwdAccountLockedTime disables then re-enables bind"
+else
+    fail "disable/enable failed (disabled=$DISABLED enabled=$ENABLED)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

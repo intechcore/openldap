@@ -54,10 +54,11 @@ ENV PATH="/opt/symas/bin:/opt/symas/sbin:${PATH}"
 # Runtime directories:
 #   /container/certs  — mount TLS certs here (compat with the old osixia layout)
 #   /schema           — custom schema files (*.schema / *.ldif), baked or mounted
+#   /overlays         — cn=config overlay/module LDIFs (e.g. ppolicy), first boot
 #   /bootstrap        — initial data LDIF applied on first start (mount only)
 #   /etc/ldap/slapd.d — cn=config (kept at the osixia path for volume compat)
 #   /var/lib/ldap     — mdb data (kept at the osixia path for volume compat)
-RUN mkdir -p /container/certs /schema /bootstrap /run/slapd \
+RUN mkdir -p /container/certs /schema /overlays /bootstrap /run/slapd \
         /etc/ldap/slapd.d /var/lib/ldap /etc/ldap/certs && \
     chown -R openldap:openldap /var/lib/ldap /etc/ldap/slapd.d /run/slapd /etc/ldap/certs
 

@@ -1,0 +1,113 @@
+# Anonymized, synthetic people — model the production schema (inetOrgPerson with
+# cn-based RDN, displayName/givenName/sn/mail/preferredLanguage) without any real
+# data. Cleartext userPassword values are hashed on add by the ppolicy overlay
+# (olcPPolicyHashCleartext=TRUE); the shared test password is "Secret123".
+dn: cn=asmith,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: asmith
+displayName: Alice Smith
+givenName: Alice
+sn: Smith
+mail: asmith@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=bjones,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: bjones
+displayName: Bob Jones
+givenName: Bob
+sn: Jones
+mail: bjones@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=cmiller,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: cmiller
+displayName: Carol Miller
+givenName: Carol
+sn: Miller
+mail: cmiller@example.test
+preferredLanguage: de
+userPassword: Secret123
+
+dn: cn=ddavis,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: ddavis
+displayName: David Davis
+givenName: David
+sn: Davis
+mail: ddavis@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=eevans,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: eevans
+displayName: Emma Evans
+givenName: Emma
+sn: Evans
+mail: eevans@example.test
+preferredLanguage: de
+userPassword: Secret123
+
+dn: cn=ffoster,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: ffoster
+displayName: Frank Foster
+givenName: Frank
+sn: Foster
+mail: ffoster@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=ggreen,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: ggreen
+displayName: Grace Green
+givenName: Grace
+sn: Green
+mail: ggreen@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=hhill,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: hhill
+displayName: Henry Hill
+givenName: Henry
+sn: Hill
+mail: hhill@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=ijames,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: ijames
+displayName: Irene James
+givenName: Irene
+sn: James
+mail: ijames@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=jkent,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: jkent
+displayName: Jack Kent
+givenName: Jack
+sn: Kent
+mail: jkent@example.test
+preferredLanguage: en
+userPassword: Secret123
+
+dn: cn=zmuller,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: zmuller
+displayName: Zoë Müller
+givenName: Zoë
+sn: Müller
+mail: zmuller@example.test
+preferredLanguage: de
+userPassword: Secret123

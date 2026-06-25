@@ -1,0 +1,19 @@
+# Default password policy referenced by the ppolicy overlay.
+dn: ou=policies,dc=example,dc=test
+objectClass: top
+objectClass: organizationalUnit
+ou: policies
+
+dn: cn=default,ou=policies,dc=example,dc=test
+objectClass: top
+objectClass: device
+objectClass: pwdPolicy
+cn: default
+pwdAttribute: userPassword
+pwdCheckQuality: 0
+pwdMinLength: 8
+pwdExpireWarning: 604800
+pwdLockout: TRUE
+pwdLockoutDuration: 0
+pwdMaxFailure: 3
+pwdInHistory: 10

@@ -15,15 +15,19 @@ OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
   (`symas-openldap-server`/`-clients` at `SYMAS_VERSION`) from the Symas LTS apt
   repo onto a slim Debian runtime. No source compile (keeps multi-arch fast).
 - `entrypoint.sh` — hybrid bootstrap. Env vars (osixia-compatible) drive
-  first-boot config; `/schema` and `/bootstrap` LDIF cover the rest. Idempotent
-  across restarts (only bootstraps when the config volume is empty). Also hosts
-  the opt-in TLS cert watcher (`LDAP_TLS_WATCH`).
+  first-boot config; `/schema`, `/overlays` (cn=config overlay LDIF, applied via
+  ldapmodify) and `/bootstrap` LDIF cover the rest. Idempotent across restarts
+  (only bootstraps when the config volume is empty). Also hosts the opt-in TLS
+  cert watcher (`LDAP_TLS_WATCH`).
 - `reload-tls.sh` → `/usr/local/bin/reload-tls` — re-reads slapd's TLS material
   without a restart by re-asserting `olcTLS*` in `cn=config` (for renewals).
 - `schema/` — custom schemas baked into the image at `/schema`.
 - `examples/letsencrypt/` — certbot DNS-01 sidecar + auto-reload reference.
-- `tests/integration/` — `docker compose` + `test-integration.sh` smoke +
-  end-to-end (auth, readonly, bootstrap, custom schema, TLS).
+- `tests/integration/` — `test-integration.sh` (smoke + e2e: auth, readonly,
+  bootstrap, custom schema, TLS + reload, ppolicy, CRUD) and
+  `test-migration.sh` (2.4→2.6 via osixia/openldap:1.5.0 → slapcat → reimport).
+  Anonymized synthetic fixtures under `fixtures/` (people/groups/policies +
+  `overlays/10-ppolicy.ldif`).
 - `.github/workflows/` — build+test, lint, security (Trivy), release.
 
 ## Key facts
@@ -34,6 +38,10 @@ OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
   `/opt/symas/lib/openldap`.
 - Backends/overlays are loadable modules in the Symas build (not static), so the
   generated `slapd.conf` must `moduleload back_mdb` before `database mdb`.
+- The mdb database is defined before monitor so it lands at
+  `olcDatabase={1}mdb,cn=config` (osixia-compatible index that overlay LDIFs in
+  `/overlays`, e.g. ppolicy, reference). Overlays load before the `/bootstrap`
+  data.
 - Data: `/var/lib/ldap`; config: `/etc/ldap/slapd.d` (osixia-compatible paths).
 - slapd runs as the `openldap` user (created in the Dockerfile — the Symas
   packages don't add it); the entrypoint starts as root to set up.

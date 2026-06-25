@@ -32,22 +32,55 @@ which lets OpenLDAP 2.6 write the mdb in its current format.
 ### 1. Export from the running osixia container
 
 ```bash
-# Config (cn=config) and data, dumped as LDIF
-docker exec itc-openldap slapcat -n 0 -l /tmp/config.ldif
-docker exec itc-openldap slapcat -n 1 -l /tmp/data.ldif
-docker cp itc-openldap:/tmp/data.ldif ./data.ldif
+# Dump the data backend as LDIF (suffix-scoped; -o ldif-wrap=no keeps every
+# attribute on a single line so the filter below is reliable).
+docker exec itc-openldap slapcat -o ldif-wrap=no -b "dc=intechcore,dc=online" > dump.ldif
 ```
 
-Keep only `data.ldif` — the `cn=config` from 2.4 is **not** reused; the new
-image regenerates config from the env vars. Review `data.ldif` and strip any
-operational attributes if `slapadd` complains (`entryCSN`, `entryUUID` are
-fine to keep).
+The `cn=config` from 2.4 is **not** reused — the new image regenerates config
+from the env vars (and overlays from `/overlays`, see step 2).
+
+The new image applies `/bootstrap` LDIF with `ldapadd`, which **rejects
+operational / `NO-USER-MODIFICATION` attributes** that `slapcat` emits. Strip
+them before reimport — note `memberOf`, which the old osixia server's memberof
+overlay computed onto every user entry (membership really lives in the group
+entries' `member`/`uniqueMember`, recomputed if you re-enable the overlay):
+
+```bash
+grep -ivE '^(structuralObjectClass|entryUUID|entryCSN|creatorsName|createTimestamp|modifiersName|modifyTimestamp|entryDN|subschemaSubentry|hasSubordinates|contextCSN|memberOf|pwdChangedTime|pwdFailureTime|pwdGraceUseTime|pwdHistory|pwdAccountLockedTime|pwdReset):' \
+  dump.ldif > data.ldif
+```
+
+User `userPassword` hashes are preserved by this dump, so existing credentials
+keep working after the import. This export/strip/reimport flow is exercised end
+to end by `tests/integration/test-migration.sh`.
 
 ### 2. Start the new image with the data as bootstrap
 
 ```bash
-mkdir -p ./bootstrap
+mkdir -p ./bootstrap ./overlays
 cp data.ldif ./bootstrap/00-data.ldif
+```
+
+If your old server ran the **ppolicy** overlay (password policy / account
+lockout), re-enable it on the new server by dropping its `cn=config` LDIF into
+`./overlays` (mounted at `/overlays`) — overlays are applied on first boot
+before the data. The data backend is `olcDatabase={1}mdb,cn=config`:
+
+```ldif
+# overlays/10-ppolicy.ldif
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: ppolicy
+
+dn: olcOverlay=ppolicy,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcPPolicyConfig
+olcOverlay: ppolicy
+olcPPolicyDefault: cn=default,ou=policies,dc=intechcore,dc=online
+olcPPolicyHashCleartext: TRUE
 ```
 
 Point the compose service at fresh `*-data` / `*-config` volumes and start it.

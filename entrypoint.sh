@@ -33,6 +33,7 @@ LDAP_LOG_LEVEL="${LDAP_LOG_LEVEL:-256}"
 
 CERTS_DIR="${CERTS_DIR:-/container/certs}"
 SCHEMA_DIR="${SCHEMA_DIR:-/schema}"
+OVERLAYS_DIR="${OVERLAYS_DIR:-/overlays}"
 BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-/bootstrap}"
 CONFIG_DIR=/etc/ldap/slapd.d
 DATA_DIR=/var/lib/ldap
@@ -115,8 +116,8 @@ access to *
   by dn.exact="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" manage
   by * break
 
-database monitor
-
+# mdb is defined before monitor so it lands at olcDatabase={1}mdb,cn=config —
+# the osixia-compatible index that overlay LDIFs (e.g. ppolicy) reference.
 database mdb
 suffix "$LDAP_BASE_DN"
 rootdn "cn=admin,$LDAP_BASE_DN"
@@ -138,6 +139,8 @@ access to *
   by self write
   by users read
   by * none
+
+database monitor
 EOF
     } > "$conf"
 
@@ -198,6 +201,17 @@ bootstrap_data() {
         log "Loading schema LDIF $f"
         ldapadd -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" -f "$f" >/dev/null 2>&1 \
             || log "  (schema $f already present or partially applied)"
+    done
+
+    # Overlay / cn=config customisation (e.g. ppolicy, memberof, refint). These
+    # are cn=config "changetype:" LDIFs applied under the config rootdn before
+    # the data load, so the overlays are active when the data lands. The data
+    # backend is olcDatabase={1}mdb,cn=config (osixia-compatible index).
+    for f in "$OVERLAYS_DIR"/*.ldif; do
+        [ -f "$f" ] || continue
+        log "Applying overlay/config LDIF $f"
+        ldapmodify -c -x -H "$boot_ldapi" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" -f "$f" >/dev/null 2>&1 \
+            || log "  (some directives in $f were already applied)"
     done
 
     # Base tree + standard OUs.

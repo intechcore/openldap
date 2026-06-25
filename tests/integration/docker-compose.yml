@@ -15,6 +15,7 @@ services:
       LDAP_LOG_LEVEL: "256"
     volumes:
       - ./fixtures/schema:/schema:ro
+      - ./fixtures/overlays:/overlays:ro
       - ./fixtures/bootstrap:/bootstrap:ro
     ports:
       - "${LDAP_TEST_PORT:-3389}:389"

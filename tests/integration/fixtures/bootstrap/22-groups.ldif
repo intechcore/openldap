@@ -1,0 +1,47 @@
+# Anonymized, synthetic groups — groupOfUniqueNames with uniqueMember DN
+# references, matching the production group schema. Includes a large "everyone"
+# group to exercise multi-valued membership.
+dn: cn=admins,ou=groups,dc=example,dc=test
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: admins
+description: Administrators
+uniqueMember: cn=bjones,ou=people,dc=example,dc=test
+uniqueMember: cn=ddavis,ou=people,dc=example,dc=test
+
+dn: cn=developers,ou=groups,dc=example,dc=test
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: developers
+description: Developers
+uniqueMember: cn=asmith,ou=people,dc=example,dc=test
+uniqueMember: cn=cmiller,ou=people,dc=example,dc=test
+uniqueMember: cn=eevans,ou=people,dc=example,dc=test
+uniqueMember: cn=ffoster,ou=people,dc=example,dc=test
+uniqueMember: cn=ggreen,ou=people,dc=example,dc=test
+
+dn: cn=testers,ou=groups,dc=example,dc=test
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: testers
+description: QA testers
+uniqueMember: cn=hhill,ou=people,dc=example,dc=test
+uniqueMember: cn=ijames,ou=people,dc=example,dc=test
+uniqueMember: cn=jkent,ou=people,dc=example,dc=test
+
+dn: cn=everyone,ou=groups,dc=example,dc=test
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: everyone
+description: All staff
+uniqueMember: cn=asmith,ou=people,dc=example,dc=test
+uniqueMember: cn=bjones,ou=people,dc=example,dc=test
+uniqueMember: cn=cmiller,ou=people,dc=example,dc=test
+uniqueMember: cn=ddavis,ou=people,dc=example,dc=test
+uniqueMember: cn=eevans,ou=people,dc=example,dc=test
+uniqueMember: cn=ffoster,ou=people,dc=example,dc=test
+uniqueMember: cn=ggreen,ou=people,dc=example,dc=test
+uniqueMember: cn=hhill,ou=people,dc=example,dc=test
+uniqueMember: cn=ijames,ou=people,dc=example,dc=test
+uniqueMember: cn=jkent,ou=people,dc=example,dc=test
+uniqueMember: cn=zmuller,ou=people,dc=example,dc=test

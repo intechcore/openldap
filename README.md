@@ -48,6 +48,7 @@ volumes:
 - `cn=config` (dynamic) backend, `mdb` data store
 - First-boot bootstrap driven by environment variables (osixia-compatible)
 - Custom schema loading from `/schema` (`*.schema` and `*.ldif`)
+- Overlay/`cn=config` loading from `/overlays` (e.g. ppolicy, memberof)
 - Initial data load from `/bootstrap` (`*.ldif`)
 - TLS via mounted certs, with a self-signed fallback for dev/CI
 - Health check over the local `ldapi://` socket
@@ -98,6 +99,28 @@ ways to apply a renewed certificate without recreating the container:
 A complete Let's Encrypt setup (certbot DNS-01 sidecar + auto-reload, no docker
 socket) is in [`examples/letsencrypt/`](examples/letsencrypt/).
 
+## Overlays
+
+Drop `cn=config` LDIF files into `/overlays` to enable overlays/modules on first
+boot (applied before the data load). The data backend is
+`olcDatabase={1}mdb,cn=config`. Example — the **ppolicy** password-policy overlay:
+
+```ldif
+# /overlays/10-ppolicy.ldif
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: ppolicy
+
+dn: olcOverlay=ppolicy,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcPPolicyConfig
+olcOverlay: ppolicy
+olcPPolicyDefault: cn=default,ou=policies,dc=example,dc=org
+olcPPolicyHashCleartext: TRUE
+```
+
 ## Directory layout
 
 | Path | Purpose |
@@ -106,6 +129,7 @@ socket) is in [`examples/letsencrypt/`](examples/letsencrypt/).
 | `/etc/ldap/slapd.d` | `cn=config` (persist) |
 | `/container/certs` | mounted TLS material |
 | `/schema` | custom schemas (baked or mounted) |
+| `/overlays` | first-boot overlay/`cn=config` LDIF (mount) |
 | `/bootstrap` | first-boot data LDIF (mount) |
 
 ## Building Locally
@@ -113,6 +137,7 @@ socket) is in [`examples/letsencrypt/`](examples/letsencrypt/).
 ```bash
 make build                       # build openldap:2.6.13
 make test                        # build + integration tests (needs docker compose)
+make test-migration              # build + 2.4 -> 2.6 migration test
 make lint                        # shellcheck + hadolint
 make scan                        # build + trivy scan
 make bump-openldap V=2.6.14      # bump version + resolve Symas package revision

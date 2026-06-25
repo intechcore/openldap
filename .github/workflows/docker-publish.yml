@@ -31,3 +31,6 @@ jobs:
 
       - name: Run tests
         run: ./tests/integration/test-integration.sh openldap:test
+
+      - name: Run 2.4 to 2.6 migration test
+        run: ./tests/integration/test-migration.sh openldap:test
