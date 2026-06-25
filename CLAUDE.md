@@ -60,6 +60,9 @@ See the "Where the binaries come from" section in README.md.
 - Optional `unique` overlay (`LDAP_UNIQUE`, attrs `LDAP_UNIQUE_ATTRIBUTES`,
   default `mail uid`) rejects duplicate values (one `olcUniqueURI:
   ldap:///?<attr>?sub?` per attribute, enforced even for rootdn writes).
+- `LDAP_PASSWORD_HASH` (default `{SSHA}`) sets `olcPasswordHash`; the entrypoint
+  loads the needed module (argon2/pw-pbkdf2/pw-sha2/pw-apr1) for non-built-in
+  schemes. Existing hashes keep verifying — switching is a lazy migration.
 - The ppolicy module is `moduleload`ed in the generated slapd.conf so its
   `pwdPolicy` schema is available by default (no standalone ppolicy.schema file
   exists in the Symas build); the overlay itself is still opt-in via `/overlays`.

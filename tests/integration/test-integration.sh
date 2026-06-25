@@ -31,10 +31,10 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=64
+TOTAL=65
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -900,6 +900,29 @@ if $NU_OK && $NU_DUP; then
     pass "duplicate mail accepted when LDAP_UNIQUE is unset"
 else
     fail "unexpected enforcement with unique disabled (ready=$NU_OK dupAccepted=$NU_DUP)"
+fi
+
+# ── password hashing scheme ─────────────────────────────────────────────────
+echo "[65/$TOTAL] LDAP_PASSWORD_HASH applies the chosen scheme (argon2)"
+docker rm -f openldap-argon2 >/dev/null 2>&1 || true
+docker run -d --name openldap-argon2 -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin -e LDAP_PASSWORD_HASH='{ARGON2}' "$IMAGE" >/dev/null 2>&1
+AR_OK=false
+for _ in $(seq 1 90); do docker exec openldap-argon2 ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { AR_OK=true; break; }; sleep 1; done
+docker exec -i openldap-argon2 ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
+dn: cn=ar,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: ar
+sn: x
+EOF
+docker exec openldap-argon2 ldappasswd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -s ArgonPass123 "cn=ar,ou=people,dc=example,dc=test" >/dev/null 2>&1
+AR_HASH=$(docker exec openldap-argon2 ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "cn=ar,ou=people,dc=example,dc=test" userPassword 2>/dev/null | sed -n 's/^userPassword:: //p' | base64 -d 2>/dev/null || true)
+AR_BIND=false
+docker exec openldap-argon2 ldapwhoami -x -H "$LDAPI" -D "cn=ar,ou=people,dc=example,dc=test" -w ArgonPass123 >/dev/null 2>&1 && AR_BIND=true
+docker rm -f openldap-argon2 >/dev/null 2>&1 || true
+if $AR_OK && echo "$AR_HASH" | grep -q '{ARGON2}' && $AR_BIND; then
+    pass "password stored as {ARGON2} and binds"
+else
+    fail "argon2 scheme not applied (ready=$AR_OK hash='$(echo "$AR_HASH" | cut -c1-12)' bind=$AR_BIND)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

@@ -21,6 +21,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   successful bind / "last login").
 - Optional `unique` overlay (`LDAP_UNIQUE`, attributes via
   `LDAP_UNIQUE_ATTRIBUTES`, default `mail uid`) rejecting duplicate values.
+- Configurable password hash (`LDAP_PASSWORD_HASH`, default `{SSHA}`):
+  `{ARGON2}`, `{PBKDF2-SHA512}`, `{SSHA512}`, … with the matching module loaded
+  automatically; existing hashes keep working (lazy migration).
 - ppolicy module (and its `pwdPolicy` schema) loaded by default, so the schema
   is available without activating the overlay.
 - TLS hardened by default: minimum TLS 1.2 (`LDAP_TLS_PROTOCOL_MIN`, default

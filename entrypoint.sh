@@ -38,6 +38,12 @@ LDAP_LASTBIND="${LDAP_LASTBIND:-false}"
 # (e.g. no two entries may share a mail or uid), rejecting duplicate writes.
 LDAP_UNIQUE="${LDAP_UNIQUE:-false}"
 LDAP_UNIQUE_ATTRIBUTES="${LDAP_UNIQUE_ATTRIBUTES:-mail uid}"
+# Password hashing scheme for new/changed passwords (olcPasswordHash). The
+# default {SSHA} is the compiled-in default; {ARGON2}, {PBKDF2-SHA512},
+# {SSHA512}, … load the matching module automatically. Existing hashes keep
+# working, so switching is a lazy migration.
+LDAP_PASSWORD_HASH="${LDAP_PASSWORD_HASH:-}"
+[ -z "$LDAP_PASSWORD_HASH" ] && LDAP_PASSWORD_HASH='{SSHA}'
 LDAP_TLS="${LDAP_TLS:-false}"
 LDAP_TLS_CRT_FILENAME="${LDAP_TLS_CRT_FILENAME:-ldap.crt}"
 LDAP_TLS_KEY_FILENAME="${LDAP_TLS_KEY_FILENAME:-ldap.key}"
@@ -166,6 +172,18 @@ bootstrap_config() {
         # available by default (osixia parity) — there is no standalone
         # ppolicy.schema file; the overlay is only activated when configured.
         echo "moduleload ppolicy"
+        # Password hash for new/changed passwords. Built-in schemes ({SSHA},
+        # {SHA}, {CRYPT}, …) need no module; load the right one otherwise.
+        # slaptest places `password-hash` on the frontend database — the correct
+        # location (setting olcPasswordHash on the global cn=config breaks
+        # startup when the scheme comes from a loadable module).
+        case "$LDAP_PASSWORD_HASH" in
+            *ARGON2*) echo "moduleload argon2" ;;
+            *PBKDF2*) echo "moduleload pw-pbkdf2" ;;
+            *SHA256*|*SHA384*|*SHA512*) echo "moduleload pw-sha2" ;;
+            *APR1*) echo "moduleload pw-apr1" ;;
+        esac
+        echo "password-hash $LDAP_PASSWORD_HASH"
         if [ "$LDAP_TLS" = "true" ]; then
             echo "TLSCACertificateFile $TLS_CA"
             echo "TLSCertificateFile $TLS_CRT"

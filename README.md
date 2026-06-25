@@ -80,6 +80,7 @@ starts reuse the persisted `cn=config`.
 | `LDAP_LASTBIND` | `false` | Enable the lastbind overlay (`authTimestamp` last-login) |
 | `LDAP_UNIQUE` | `false` | Enable the unique overlay (reject duplicate attribute values) |
 | `LDAP_UNIQUE_ATTRIBUTES` | `mail uid` | Attributes the unique overlay enforces |
+| `LDAP_PASSWORD_HASH` | `{SSHA}` | Hash for new passwords (`{ARGON2}`, `{PBKDF2-SHA512}`, `{SSHA512}`, …) |
 | `LDAP_TLS` | `false` | Enable `ldaps://` + StartTLS |
 | `LDAP_TLS_CRT_FILENAME` | `ldap.crt` | Cert filename in `/container/certs` |
 | `LDAP_TLS_KEY_FILENAME` | `ldap.key` | Key filename |
@@ -166,6 +167,22 @@ locally (e.g. some Dovecot/Postfix setups). Both are read-only (no writes).
 
 The `cn=admin,<base>` rootdn bypasses ACLs for administration. Tighten or widen
 by mounting your own `cn=config` ACL LDIF into `/overlays`.
+
+### Password hashing
+
+`LDAP_PASSWORD_HASH` sets the scheme used for **new and changed** passwords.
+Default `{SSHA}`. Available schemes: built-in `{SSHA}` / `{SHA}` / `{SMD5}` /
+`{MD5}` / `{CRYPT}`, plus `{ARGON2}`, `{PBKDF2-SHA512}` / `{PBKDF2-SHA256}`,
+`{SSHA512}` / `{SSHA256}` (the matching module is loaded automatically).
+
+Switching schemes is a **lazy migration**: existing hashes keep verifying, and
+each password is re-hashed with the new scheme the next time it is set (via
+`ldappasswd`, or a cleartext write when ppolicy's `olcPPolicyHashCleartext` is
+on). You can switch back to `{SSHA}` the same way. Notes: `LDAP_PASSWORD_HASH` is
+read only on first boot (change it on a running server with an `olcPasswordHash`
+`ldapmodify`); bind-based clients (Spring, Apache `mod_ldap`, …) don't care about
+the scheme, but any client that reads the hash to verify locally must understand
+it; `{ARGON2}` costs more CPU/RAM per bind than `{SSHA}`.
 
 ## Directory layout
 
