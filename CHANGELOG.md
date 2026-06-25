@@ -36,6 +36,8 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   (certbot sidecar) in `examples/letsencrypt/`.
 - Pinned Symas package revision (`SYMAS_VERSION`); renovate tracks new 2.6
   releases and `make bump-openldap` resolves the matching package version.
+- Base-image security updates applied at build time (`apt-get upgrade`) before
+  the pinned Symas packages are installed, so the pin is preserved.
 - Integration suite (58 cases) covering ppolicy (lockout, history, min-length,
   admin unlock, auto-unlock via pwdLockoutDuration, disable via
   pwdAccountLockedTime), CRUD, memberof/refint (member add/remove, rename, group

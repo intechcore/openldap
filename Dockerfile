@@ -31,6 +31,7 @@ LABEL org.opencontainers.image.version="${OPENLDAP_VERSION}"
 # purged afterwards to keep the image slim.
 # hadolint ignore=DL3008
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends ca-certificates curl openssl && \
     curl -fsSL https://repo.symas.com/repo/gpg/RPM-GPG-KEY-symas-com-signing-key \
         -o /usr/share/keyrings/symas-key.asc && \
