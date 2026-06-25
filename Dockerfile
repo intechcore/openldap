@@ -24,6 +24,10 @@ LABEL org.opencontainers.image.documentation="https://github.com/intechcore/open
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.version="${OPENLDAP_VERSION}"
 
+# Silence debconf's interactive frontend during apt (no TTY in the build). As an
+# ARG it applies only to build-time RUN steps and is not persisted in the image.
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Add the Symas LTS repo (armored key consumed directly via signed-by, no gnupg
 # needed) and install the pinned server + client packages. openssl is kept for
 # the self-signed TLS fallback in the entrypoint; the symas packages pull their
