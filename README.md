@@ -67,9 +67,12 @@ starts reuse the persisted `cn=config`.
 | `LDAP_BASE_DN` | derived from domain | Override the computed base DN |
 | `LDAP_ADMIN_PASSWORD` | `admin` | Password for `cn=admin,<base>` |
 | `LDAP_CONFIG_PASSWORD` | = admin password | Password for `cn=admin,cn=config` |
-| `LDAP_READONLY_USER` | `false` | Create a read-only bind account |
+| `LDAP_READONLY_USER` | `false` | Create a read-only bind account (no `userPassword` access) |
 | `LDAP_READONLY_USER_USERNAME` | `readonly` | Read-only account CN |
 | `LDAP_READONLY_USER_PASSWORD` | `readonly` | Read-only account password |
+| `LDAP_READONLY_PW_USER` | `false` | Create a 2nd read-only account that **can** read `userPassword` |
+| `LDAP_READONLY_PW_USERNAME` | `readpw` | Password-reading account CN |
+| `LDAP_READONLY_PW_PASSWORD` | `readpw` | Password-reading account password |
 | `LDAP_MEMBEROF` | `true` | Enable the memberof overlay (reverse `memberOf`) |
 | `LDAP_REFINT` | `true` | Enable the refint overlay (referential integrity) |
 | `LDAP_TLS` | `false` | Enable `ldaps://` + StartTLS |
@@ -139,6 +142,12 @@ The default ACLs match osixia's restrictive model:
   (bind), nobody can read the hash.
 - Everything else — a user reads **only its own entry**; the optional readonly
   account (`LDAP_READONLY_USER`) reads the whole tree; everyone else is denied.
+
+Two read-only service accounts are available: `LDAP_READONLY_USER` reads all
+entries but **never** the password hashes (the right choice for services that
+authenticate via an LDAP bind), while `LDAP_READONLY_PW_USER` additionally reads
+`userPassword` — only for services that verify passwords by reading the hash
+locally (e.g. some Dovecot/Postfix setups). Both are read-only (no writes).
 
 The `cn=admin,<base>` rootdn bypasses ACLs for administration. Tighten or widen
 by mounting your own `cn=config` ACL LDIF into `/overlays`.

@@ -18,6 +18,13 @@ LDAP_CONFIG_PASSWORD="${LDAP_CONFIG_PASSWORD:-$LDAP_ADMIN_PASSWORD}"
 LDAP_READONLY_USER="${LDAP_READONLY_USER:-false}"
 LDAP_READONLY_USER_USERNAME="${LDAP_READONLY_USER_USERNAME:-readonly}"
 LDAP_READONLY_USER_PASSWORD="${LDAP_READONLY_USER_PASSWORD:-readonly}"
+# A second read-only account that may ALSO read userPassword hashes — for
+# services that verify passwords by reading the hash locally (e.g. some
+# Dovecot/Postfix setups) rather than via an LDAP bind. Off by default; the
+# plain readonly account above never sees password hashes.
+LDAP_READONLY_PW_USER="${LDAP_READONLY_PW_USER:-false}"
+LDAP_READONLY_PW_USERNAME="${LDAP_READONLY_PW_USERNAME:-readpw}"
+LDAP_READONLY_PW_PASSWORD="${LDAP_READONLY_PW_PASSWORD:-readpw}"
 # Overlays enabled by default for osixia parity. memberof maintains the reverse
 # memberOf attribute; refint keeps DN references consistent on delete/rename.
 # Both are configured exactly as osixia did (groupOfUniqueNames / uniqueMember).
@@ -95,6 +102,14 @@ bootstrap_config() {
     admin_hash="$(slappasswd -s "$LDAP_ADMIN_PASSWORD")"
     config_hash="$(slappasswd -s "$LDAP_CONFIG_PASSWORD")"
 
+    # Extra ACL clause granting the optional password-reading readonly account
+    # read access (injected into both the userPassword and the general ACL).
+    pw_read=""
+    if [ "$LDAP_READONLY_PW_USER" = "true" ]; then
+        pw_read="
+  by dn.exact=\"cn=$LDAP_READONLY_PW_USERNAME,$LDAP_BASE_DN\" read"
+    fi
+
     conf="$(mktemp)"
     {
         for s in core cosine inetorgperson nis; do
@@ -147,11 +162,11 @@ index member eq
 
 access to attrs=userPassword,shadowLastChange
   by self write
-  by anonymous auth
+  by anonymous auth$pw_read
   by * none
 access to *
   by self read
-  by dn.exact="cn=$LDAP_READONLY_USER_USERNAME,$LDAP_BASE_DN" read
+  by dn.exact="cn=$LDAP_READONLY_USER_USERNAME,$LDAP_BASE_DN" read$pw_read
   by * none
 
 database monitor
@@ -310,6 +325,20 @@ objectClass: organizationalRole
 cn: $LDAP_READONLY_USER_USERNAME
 description: Read-only bind account
 userPassword: $ro_hash
+EOF
+    fi
+
+    # Second read-only account that may also read userPassword hashes.
+    if [ "$LDAP_READONLY_PW_USER" = "true" ]; then
+        ropw_hash="$(slappasswd -s "$LDAP_READONLY_PW_PASSWORD")"
+        log "Creating password-reading readonly user cn=$LDAP_READONLY_PW_USERNAME"
+        ldapadd -x -H "$boot_ldapi" -D "cn=admin,$LDAP_BASE_DN" -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1 <<EOF || true
+dn: cn=$LDAP_READONLY_PW_USERNAME,$LDAP_BASE_DN
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: $LDAP_READONLY_PW_USERNAME
+description: Read-only bind account with userPassword read (local password verification)
+userPassword: $ropw_hash
 EOF
     fi
 

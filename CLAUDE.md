@@ -55,6 +55,10 @@ OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
   GnuTLS like osixia), so cipher strings use OpenSSL syntax.
 - Default ACLs follow osixia's restrictive model: user reads only its own entry,
   `userPassword` not readable, readonly account reads the tree, rootdn bypasses.
+  Two readonly service accounts: `LDAP_READONLY_USER` (no `userPassword`) and the
+  optional `LDAP_READONLY_PW_USER` (also reads hashes, for local password
+  verification). The pw-reader's read clause is injected into the generated ACLs
+  via the `$pw_read` shell var in `bootstrap_config`.
 - Data: `/var/lib/ldap`; config: `/etc/ldap/slapd.d` (osixia-compatible paths).
 - slapd runs as the `openldap` user (created in the Dockerfile — the Symas
   packages don't add it); the entrypoint starts as root to set up.

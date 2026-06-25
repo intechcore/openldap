@@ -24,12 +24,14 @@ ADMIN_PW="adminpw"
 CONFIG_PW="configpw"
 RO_DN="cn=readonly,${BASE}"
 RO_PW="ropw"
+RPW_DN="cn=readpw,${BASE}"      # second readonly account that may read userPassword
+RPW_PW="readpwpw"
 USER_PW="Secret123"   # shared fixture password (see fixtures/bootstrap/21-people.ldif)
 LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=35
+TOTAL=36
 
 cleanup() {
     echo ""
@@ -463,6 +465,22 @@ if $PWOK && $ATTROK; then
     pass "self password change allowed; self attribute edit denied"
 else
     fail "self-write semantics wrong (pwChange=$PWOK attrEditDenied=$ATTROK)"
+fi
+
+echo "[36/$TOTAL] password-reading readonly account: reads hashes + all users, no write"
+RPW_PWREAD=$(canread_pw "$RPW_DN" "$RPW_PW" asmith)
+RPW_SEES=$(people_seen "$RPW_DN" "$RPW_PW")
+RPW_WRITE=denied
+docker exec -i "$CONTAINER" ldapadd -x -H "$LDAPI" -D "$RPW_DN" -w "$RPW_PW" >/dev/null 2>&1 <<EOF && RPW_WRITE=allowed
+dn: cn=intruder2,ou=people,$BASE
+objectClass: inetOrgPerson
+cn: intruder2
+sn: x
+EOF
+if [ "${RPW_PWREAD:-0}" -ge 1 ] && [ "${RPW_SEES:-0}" = "${ADMIN_SEES:-0}" ] && [ "$RPW_WRITE" = "denied" ]; then
+    pass "readpw reads userPassword ($RPW_PWREAD) and all $RPW_SEES users, write denied"
+else
+    fail "readpw wrong (pwRead=$RPW_PWREAD sees=$RPW_SEES vs admin=$ADMIN_SEES write=$RPW_WRITE)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
