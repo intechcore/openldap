@@ -36,14 +36,16 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   (certbot sidecar) in `examples/letsencrypt/`.
 - Pinned Symas package revision (`SYMAS_VERSION`); renovate tracks new 2.6
   releases and `make bump-openldap` resolves the matching package version.
-- Integration suite (50 cases) covering ppolicy (lockout, history, min-length,
-  account disable via pwdAccountLockedTime), CRUD, memberof/refint (incl. rename),
-  a full access-control matrix (admin / readonly / password-reading readonly /
-  user / anonymous), indexed search, binary attributes, openssh-lpk, plus
-  container behaviour (restart persistence + bootstrap-skip, healthcheck health,
-  non-root slapd, non-TLS mode, CMD override, base-DN derivation, slapcat
-  backup). A separate 2.4→2.6 migration test (`test-migration.sh`) reimports an
-  osixia/openldap:1.5.0 export.
+- Integration suite (58 cases) covering ppolicy (lockout, history, min-length,
+  admin unlock, auto-unlock via pwdLockoutDuration, disable via
+  pwdAccountLockedTime), CRUD, memberof/refint (member add/remove, rename, group
+  delete), a full access-control matrix (admin / readonly / password-reading
+  readonly / user / anonymous), indexed search, binary attributes, openssh-lpk,
+  TLS depth (mounted certs, reload-tls renewal, mutual-TLS client cert), plus
+  container behaviour (restart persistence of data + cn=config, bootstrap-skip,
+  healthcheck health, non-root slapd, non-TLS mode, CMD override, base-DN
+  derivation, slapcat backup). A separate 2.4→2.6 migration test
+  (`test-migration.sh`) reimports an osixia/openldap:1.5.0 export.
 - CI: build + integration + migration tests, hadolint/shellcheck lint, Trivy
   scan, multi-arch (`amd64`/`arm64`) release to ghcr.io.
 - `MIGRATION.md` with the slapcat → strip → reimport recipe from osixia.

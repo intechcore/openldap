@@ -31,10 +31,10 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=50
+TOTAL=58
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -655,6 +655,132 @@ if $DERIVED && $OVERRIDE; then
     pass "a.b.test -> dc=a,dc=b,dc=test; LDAP_BASE_DN override honoured"
 else
     fail "base DN handling wrong (derived=$DERIVED override=$OVERRIDE)"
+fi
+
+# ── Overlay/ppolicy depth + TLS depth ───────────────────────────────────────
+echo "[51/$TOTAL] cn=config persisted across the restart (overlays still active)"
+PP_PERSIST=false; MO_PERSIST=false
+ccfg -b "cn=config" "(olcOverlay=ppolicy)" dn | grep -qi ppolicy && PP_PERSIST=true
+dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=asmith,ou=people,$BASE" memberOf 2>/dev/null | grep -qi "cn=developers," && MO_PERSIST=true
+if $PP_PERSIST && $MO_PERSIST; then
+    pass "ppolicy overlay and computed memberOf survived the restart"
+else
+    fail "config did not persist (ppolicy=$PP_PERSIST memberOf=$MO_PERSIST)"
+fi
+
+echo "[52/$TOTAL] ppolicy: admin unlocks a locked account"
+for _ in 1 2 3; do uwhoami jkent wrong-pw || true; done
+PL_LOCKED=false; PL_UNLOCKED=false
+uwhoami jkent "$USER_PW" || PL_LOCKED=true
+docker exec -i "$CONTAINER" ldapmodify -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF
+dn: cn=jkent,ou=people,$BASE
+changetype: modify
+delete: pwdAccountLockedTime
+EOF
+uwhoami jkent "$USER_PW" && PL_UNLOCKED=true
+if $PL_LOCKED && $PL_UNLOCKED; then
+    pass "locked account unlocked by clearing pwdAccountLockedTime"
+else
+    fail "admin unlock failed (locked=$PL_LOCKED unlocked=$PL_UNLOCKED)"
+fi
+
+echo "[53/$TOTAL] deleting a group removes memberOf from its members"
+GD_BEFORE=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=ggreen,ou=people,$BASE" memberOf 2>/dev/null | grep -c 'cn=developers,' || true)
+docker exec "$CONTAINER" ldapdelete -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" "cn=developers,ou=groups,$BASE" >/dev/null 2>&1
+GD_AFTER=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=ggreen,ou=people,$BASE" memberOf 2>/dev/null | grep -c 'cn=developers,' || true)
+if [ "${GD_BEFORE:-0}" -ge 1 ] && [ "${GD_AFTER:-0}" -eq 0 ]; then
+    pass "members' memberOf cleaned when the group was deleted"
+else
+    fail "memberOf not cleaned on group delete (before=$GD_BEFORE after=$GD_AFTER)"
+fi
+
+echo "[54/$TOTAL] removing a member from a group drops its memberOf"
+MR_BEFORE=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=hhill,ou=people,$BASE" memberOf 2>/dev/null | grep -c 'cn=everyone,' || true)
+docker exec -i "$CONTAINER" ldapmodify -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF
+dn: cn=everyone,ou=groups,$BASE
+changetype: modify
+delete: uniqueMember
+uniqueMember: cn=hhill,ou=people,$BASE
+EOF
+MR_AFTER=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=hhill,ou=people,$BASE" memberOf 2>/dev/null | grep -c 'cn=everyone,' || true)
+if [ "${MR_BEFORE:-0}" -ge 1 ] && [ "${MR_AFTER:-0}" -eq 0 ]; then
+    pass "memberof dropped the reverse membership on member removal"
+else
+    fail "memberOf not updated on member removal (before=$MR_BEFORE after=$MR_AFTER)"
+fi
+
+echo "[55/$TOTAL] ppolicy: pwdLockoutDuration auto-unlocks after the window"
+docker exec -i "$CONTAINER" ldapmodify -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 <<EOF
+dn: cn=default,ou=policies,$BASE
+changetype: modify
+replace: pwdLockoutDuration
+pwdLockoutDuration: 3
+EOF
+for _ in 1 2 3; do uwhoami ffoster wrong-pw || true; done
+AU_LOCKED=false; AU_UNLOCKED=false
+uwhoami ffoster "$USER_PW" || AU_LOCKED=true
+sleep 4
+uwhoami ffoster "$USER_PW" && AU_UNLOCKED=true
+if $AU_LOCKED && $AU_UNLOCKED; then
+    pass "account auto-unlocked after pwdLockoutDuration elapsed"
+else
+    fail "auto-unlock failed (locked=$AU_LOCKED unlocked=$AU_UNLOCKED)"
+fi
+
+# ── TLS: mounted certs, renewal reload, mutual TLS ──────────────────────────
+echo "[56/$TOTAL] a mounted TLS certificate is served (not the self-signed fallback)"
+MNT="$(mktemp -d)"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=mounted-server" -keyout "$MNT/ldap.key" -out "$MNT/ldap.crt" 2>/dev/null
+cp "$MNT/ldap.crt" "$MNT/ca.crt"; chmod 644 "$MNT"/*
+docker rm -f openldap-mtls >/dev/null 2>&1 || true
+docker run -d --name openldap-mtls -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=never -v "$MNT:/container/certs" "$IMAGE" >/dev/null 2>&1
+MC_OK=false
+for _ in $(seq 1 90); do docker exec openldap-mtls ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { MC_OK=true; break; }; sleep 1; done
+MC_SUBJ=$(docker exec openldap-mtls sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject' 2>/dev/null || true)
+if $MC_OK && echo "$MC_SUBJ" | grep -q "CN=mounted-server"; then
+    pass "slapd served the mounted certificate ($MC_SUBJ)"
+else
+    fail "mounted cert not served (ready=$MC_OK subj=$MC_SUBJ)"
+fi
+
+echo "[57/$TOTAL] reload-tls applies a renewed mounted certificate"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=mounted-renewed" -keyout "$MNT/ldap.key" -out "$MNT/ldap.crt" 2>/dev/null
+cp -f "$MNT/ldap.crt" "$MNT/ca.crt"; chmod 644 "$MNT"/*
+docker exec openldap-mtls reload-tls >/dev/null 2>&1 || true
+MC_SUBJ2=$(docker exec openldap-mtls sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject' 2>/dev/null || true)
+docker rm -f openldap-mtls >/dev/null 2>&1 || true
+rm -rf "$MNT"
+if echo "$MC_SUBJ2" | grep -q "CN=mounted-renewed"; then
+    pass "reload-tls served the renewed mounted cert ($MC_SUBJ2)"
+else
+    fail "reload-tls did not pick up the renewed mounted cert (subj=$MC_SUBJ2)"
+fi
+
+echo "[58/$TOTAL] mutual TLS: LDAP_TLS_VERIFY_CLIENT=demand requires a client cert"
+MT="$(mktemp -d)"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=Test CA" -keyout "$MT/ca.key" -out "$MT/ca.crt" 2>/dev/null
+openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout "$MT/ldap.key" -out "$MT/srv.csr" 2>/dev/null
+openssl x509 -req -in "$MT/srv.csr" -CA "$MT/ca.crt" -CAkey "$MT/ca.key" -CAcreateserial -days 2 -out "$MT/ldap.crt" 2>/dev/null
+openssl req -newkey rsa:2048 -nodes -subj "/CN=client" -keyout "$MT/client.key" -out "$MT/cli.csr" 2>/dev/null
+openssl x509 -req -in "$MT/cli.csr" -CA "$MT/ca.crt" -CAkey "$MT/ca.key" -CAcreateserial -days 2 -out "$MT/client.crt" 2>/dev/null
+chmod 644 "$MT"/*
+docker rm -f openldap-cca >/dev/null 2>&1 || true
+docker run -d --name openldap-cca -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=demand -v "$MT:/container/certs" "$IMAGE" >/dev/null 2>&1
+CC_OK=false
+for _ in $(seq 1 90); do docker exec openldap-cca ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { CC_OK=true; break; }; sleep 1; done
+CC_NOCERT=false; CC_WITHCERT=false
+docker exec -e LDAPTLS_REQCERT=allow openldap-cca \
+    ldapsearch -x -H ldaps://localhost -b "" -s base >/dev/null 2>&1 || CC_NOCERT=true
+docker exec -e LDAPTLS_REQCERT=allow -e LDAPTLS_CERT=/container/certs/client.crt -e LDAPTLS_KEY=/container/certs/client.key openldap-cca \
+    ldapsearch -x -H ldaps://localhost -b "" -s base >/dev/null 2>&1 && CC_WITHCERT=true
+docker rm -f openldap-cca >/dev/null 2>&1 || true
+rm -rf "$MT"
+if $CC_OK && $CC_NOCERT && $CC_WITHCERT; then
+    pass "ldaps rejected without a client cert, accepted with a valid one"
+else
+    fail "mutual TLS wrong (ready=$CC_OK noCertRejected=$CC_NOCERT withCert=$CC_WITHCERT)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
