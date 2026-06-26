@@ -29,13 +29,16 @@ See the "Where the binaries come from" section in README.md.
   without a restart by re-asserting `olcTLS*` in `cn=config` (for renewals).
 - `schema/` — custom schemas baked into the image at `/schema`.
 - `examples/letsencrypt/` — certbot DNS-01 sidecar + auto-reload reference.
-- `tests/integration/` — `test-integration.sh` (smoke + e2e: auth, readonly,
-  bootstrap, custom schema, TLS + reload, ppolicy, CRUD) and
+- `tests/integration/` — `test-integration.sh` (smoke + e2e: full ACL matrix,
+  bootstrap, custom schema, TLS/reload/mutual-TLS/cipher, ppolicy incl. expiry,
+  CRUD, memberof/refint, the `lastbind`/`unique`/`password-hash`/`rfc2307bis`
+  toggles, and a slapcat→slapadd backup round-trip) and
   `test-migration.sh` (2.4→2.6 via osixia/openldap:1.5.0 → slapcat → reimport),
   and `test-arch.sh` (buildx-builds `linux/arm64` and smoke-tests it under QEMU,
   since CI otherwise only runs the native amd64 image). Anonymized synthetic
   fixtures under `fixtures/` (people/groups/policies + `overlays/10-ppolicy.ldif`).
-- `.github/workflows/` — build+test, lint, security (Trivy), release.
+- `.github/workflows/` — build+test (integration + 2.4→2.6 migration + emulated
+  arm64 smoke), lint, security (Trivy), release.
 
 ## Key facts
 
@@ -107,7 +110,9 @@ See the "Where the binaries come from" section in README.md.
 
 ```bash
 make build
-make test     # needs docker compose
-make lint     # shellcheck + hadolint
-make scan     # trivy
+make test            # integration suite (needs docker compose)
+make test-migration  # 2.4 -> 2.6 migration (pulls osixia/openldap:1.5.0)
+make test-arch       # build linux/arm64 + smoke-test under QEMU emulation
+make lint            # shellcheck + hadolint
+make scan            # trivy
 ```
