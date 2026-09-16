@@ -87,7 +87,7 @@ EXPOSE 389 636
 # Liveness over the local ldapi:// socket — a rootDSE base search. Works
 # regardless of TLS configuration and needs no credentials.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD ldapsearch -x -H ldapi://%2Frun%2Fslapd%2Fldapi -b "" -s base -LLL 1.1 >/dev/null 2>&1 || exit 1
+    CMD ["/bin/sh", "-c", "ldapsearch -x -H ldapi://%2Frun%2Fslapd%2Fldapi -b '' -s base -LLL 1.1 >/dev/null 2>&1 || exit 1"]
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["slapd"]
