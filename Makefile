@@ -1,10 +1,10 @@
 .PHONY: build test test-migration test-arch lint scan clean bump-openldap
 
 # renovate: openldap
-OPENLDAP_VERSION ?= 2.6.13
+OPENLDAP_VERSION ?= 2.6.15
 # Exact Symas apt package revision installed (pinned). Refresh with
 # `make bump-openldap V=<version>`.
-SYMAS_VERSION    ?= 2.6.13-3trixie1
+SYMAS_VERSION    ?= 2.6.15-1trixie1
 IMAGE_NAME       ?= openldap
 IMAGE_TAG        ?= $(OPENLDAP_VERSION)
 
