@@ -1,5 +1,10 @@
 # openldap
 
+[![CI](https://github.com/intechcore/openldap/actions/workflows/ci.yml/badge.svg)](https://github.com/intechcore/openldap/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/intechcore/openldap)](https://github.com/intechcore/openldap/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/intechcore/openldap/badge)](https://scorecard.dev/viewer/?uri=github.com/intechcore/openldap)
+
 Self-maintained OpenLDAP **2.6 LTS** directory server, built from the official
 [Symas](https://www.symas.com/symas-openldap-packages) OpenLDAP 2.6 LTS packages
 on Debian 13 (trixie). Symas maintains OpenLDAP upstream, so these are
@@ -215,6 +220,24 @@ Run the **Release** workflow (`workflow_dispatch`). It builds and tests amd64
 and arm64 on separate jobs, pushes exactly the tested images, derives
 the version from `slapd -VV`, and pushes multi-arch tags
 `<version>-<n>`, `<version>`, and `latest` to `ghcr.io/intechcore/openldap`.
+
+### Verify an image
+
+Each release carries signed attestations. The build provenance proves which workflow of this
+repository built the image, and from which commit:
+
+```sh
+gh attestation verify oci://ghcr.io/intechcore/openldap:2.6.15-2 --owner intechcore
+```
+
+The SBOM (SPDX) lists the packages in the image. It belongs to the image of one platform, so
+check it on the digest of that platform, from `docker buildx imagetools inspect`:
+
+```sh
+docker buildx imagetools inspect ghcr.io/intechcore/openldap:2.6.15-2
+gh attestation verify oci://ghcr.io/intechcore/openldap@sha256:<platform digest> \
+  --owner intechcore --predicate-type https://spdx.dev/Document/v2.3
+```
 
 ### Automatic Rebuilds
 

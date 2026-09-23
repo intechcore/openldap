@@ -62,10 +62,12 @@ jobs:
   build:
     name: build (${{ matrix.arch }})
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: true
       matrix:
@@ -74,10 +76,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Set up QEMU
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -125,6 +123,24 @@ jobs:
           provenance: false
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
+      # The SBOM lists the packages of the tested image. It is attached to the
+      # pushed digest as a signed attestation.
+      - name: Generate the SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: openldap:test
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Attest the SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+
       - name: Save the digest
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
@@ -154,6 +170,8 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,6 +214,7 @@ jobs:
           echo "Selected version: ${VERSION}-${SUFFIX}"
 
       - name: Create the multi-arch image
+        id: index
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           TAG: ${{ steps.version.outputs.image_tag }}
@@ -209,6 +228,17 @@ jobs:
             "${IMAGE}@$(cat builds/build-amd64/digest)" \
             "${IMAGE}@$(cat builds/build-arm64/digest)"
           docker buildx imagetools inspect "${IMAGE}:${TAG}"
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # Signs which workflow built the image, from which commit. Users check
+      # it with: gh attestation verify oci://<image> --owner intechcore
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
 
       # gh creates the tag through the API, so the checkout keeps no
       # credentials. The notes list the commits since the previous release.
