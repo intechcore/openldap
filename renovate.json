@@ -41,6 +41,26 @@
       "registryUrlTemplate": "https://repo.symas.com/repo/deb/main/release26?suite=trixie&components=main&binaryArch=amd64",
       "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)",
       "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the image tag in the README quick start",
+      "managerFilePatterns": [
+        "/^README\\.md$/"
+      ],
+      "matchStrings": [
+        "# renovate: image=ghcr\\.io/intechcore/openldap\\n\\s*image: ghcr\\.io/intechcore/openldap:(?<currentValue>[\\d.]+-\\d+)"
+      ],
+      "depNameTemplate": "ghcr.io/intechcore/openldap",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "hostRules": [
+    {
+      "matchHost": "ghcr.io",
+      "hostType": "docker",
+      "username": "itcsrvs",
+      "password": "{{ secrets.GHCR_TOKEN }}"
     }
   ],
   "packageRules": [
@@ -68,6 +88,13 @@
         "debian"
       ],
       "enabled": false
+    },
+    {
+      "description": "Own image, private on ghcr.io (see hostRules). Every release publishes the exact build tag (2.6.15-2) next to the moving tag (2.6.15) and latest. Regex versioning tracks only the exact one and orders by the build number. Docker versioning would read -N as a compatibility tag and hide rebuilds.",
+      "matchPackageNames": [
+        "ghcr.io/intechcore/openldap"
+      ],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)$"
     }
   ]
 }
