@@ -6,6 +6,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 ## [Unreleased]
 
 ### Added
+- Weekly `Rebuild` workflow. It releases the next build when the base image
+  was rebuilt under the same tag, or when Trivy finds fixable CRITICAL or HIGH
+  vulnerabilities in the published image. New labels
+  `org.opencontainers.image.base.{name,digest}` record the base image.
 - Initial release: OpenLDAP 2.6.13 (LTS) from the official Symas OpenLDAP 2.6
   LTS apt packages on Debian 13 (trixie), as a self-maintained replacement for
   the abandoned `osixia/openldap` image.
@@ -69,3 +73,5 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 ### Changed
 - Symas pin back to `2.6.13-3trixie1`. Symas removed 2.6.15 from its
   trixie repository on 2026-09-17, so `2.6.15-1trixie1` no longer installs.
+- Base image `debian:stable-slim` → `debian:trixie-slim`, so an automatic
+  rebuild never moves to the next Debian release.

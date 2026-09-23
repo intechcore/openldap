@@ -2,6 +2,17 @@ name: Release
 
 on:
   workflow_dispatch:
+  # Called by rebuild.yml when the base image or its packages changed.
+  workflow_call:
+    inputs:
+      reason:
+        description: Why the image is rebuilt, goes into the release notes
+        type: string
+        default: ''
+      no_cache:
+        description: Build without the layer cache, to refresh the apt packages
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -26,12 +37,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Resolve base image digest
+        id: base
+        run: |
+          base=$(awk '$1 == "FROM" { print $2; exit }' Dockerfile)
+          digest=$(docker buildx imagetools inspect "$base" --format '{{json .Manifest}}' | jq -r .digest)
+          {
+            echo "image=docker.io/library/$base"
+            echo "digest=$digest"
+          } >> "$GITHUB_OUTPUT"
+          echo "Base image: $base@$digest"
+
       - name: Build image for testing
         uses: docker/build-push-action@v7
         with:
           context: .
           load: true
           tags: openldap:test
+          build-args: |
+            BASE_IMAGE=${{ steps.base.outputs.image }}
+            BASE_DIGEST=${{ steps.base.outputs.digest }}
+          no-cache: ${{ inputs.no_cache == true }}
           cache-from: type=gha
 
       - name: Run tests
@@ -79,6 +105,10 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.image_tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.ldap_version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            BASE_IMAGE=${{ steps.base.outputs.image }}
+            BASE_DIGEST=${{ steps.base.outputs.digest }}
+          no-cache: ${{ inputs.no_cache == true }}
           provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -89,6 +119,8 @@ jobs:
           git push origin "v${{ steps.version.outputs.image_tag }}"
 
       - name: Generate release notes
+        env:
+          REASON: ${{ inputs.reason }}
         run: |
           PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | sed -n '2p')
           if [ -n "$PREV_TAG" ]; then
@@ -97,6 +129,9 @@ jobs:
             git log --pretty=format:"- %s (%h)" "${PREV_TAG}..HEAD" >> release_notes.md
           else
             echo "## Initial Release" > release_notes.md
+          fi
+          if [ -n "$REASON" ]; then
+            printf '\n\n## Rebuild\n\n%s\n' "$REASON" >> release_notes.md
           fi
 
       - name: Create GitHub Release

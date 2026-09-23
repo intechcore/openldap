@@ -38,7 +38,8 @@ See the "Where the binaries come from" section in README.md.
   since CI otherwise only runs the native amd64 image). Anonymized synthetic
   fixtures under `fixtures/` (people/groups/policies + `overlays/10-ppolicy.ldif`).
 - `.github/workflows/` — build+test (integration + 2.4→2.6 migration + emulated
-  arm64 smoke), lint, security (Trivy), release.
+  arm64 smoke), lint, security (Trivy), release, and a weekly rebuild when the
+  `debian:trixie-slim` base changed or Trivy finds fixable CRITICAL/HIGH issues.
 
 ## Key facts
 

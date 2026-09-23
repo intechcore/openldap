@@ -60,7 +60,7 @@
       "allowedVersions": "/^2\\.6\\./"
     },
     {
-      "description": "Disable updates for debian:stable / debian:stable-slim (floating tag, always current)",
+      "description": "Disable updates for debian:trixie-slim. The codename tag has no version to compare; the weekly Rebuild workflow picks up its rebuilds.",
       "matchDatasources": [
         "docker"
       ],
