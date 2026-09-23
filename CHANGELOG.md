@@ -71,6 +71,11 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - `MIGRATION.md` with the slapcat → strip → reimport recipe from osixia.
 
 ### Changed
+- One `ci.yml` replaces `docker-publish.yml`, `lint.yml` and `security.yml`.
+  Lint adds actionlint, zizmor and `trivy config`. The integration tests run
+  on amd64 and arm64. Trivy fails on CRITICAL and reports HIGH to a tracking
+  issue. All workflows set their token permissions and keep no credentials in
+  the checkout. Releases are created with `gh release create`.
 - Symas pin back to `2.6.13-3trixie1`. Symas removed 2.6.15 from its
   trixie repository on 2026-09-17, so `2.6.15-1trixie1` no longer installs.
 - Base image `debian:stable-slim` → `debian:trixie-slim`, so an automatic

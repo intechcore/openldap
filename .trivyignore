@@ -1,0 +1,4 @@
+# DS-0002: the image runs as root. On purpose: the entrypoint fixes the owner
+# of the mounted data and config volumes, then slapd drops to the openldap
+# user itself (slapd -u openldap -g openldap). See entrypoint.sh.
+DS-0002

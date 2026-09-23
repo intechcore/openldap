@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -113,30 +114,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Create git tag
-        run: |
-          git tag "v${{ steps.version.outputs.image_tag }}"
-          git push origin "v${{ steps.version.outputs.image_tag }}"
-
-      - name: Generate release notes
+      # gh creates the tag through the API, so the checkout keeps no
+      # credentials. The notes list the commits since the previous release.
+      - name: Create the GitHub release
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.version.outputs.image_tag }}
           REASON: ${{ inputs.reason }}
         run: |
-          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | sed -n '2p')
+          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | head -1)
           if [ -n "$PREV_TAG" ]; then
-            echo "## Changes since ${PREV_TAG}" > release_notes.md
-            echo "" >> release_notes.md
-            git log --pretty=format:"- %s (%h)" "${PREV_TAG}..HEAD" >> release_notes.md
+            {
+              echo "## Changes since ${PREV_TAG}"
+              echo ""
+              git log --pretty=format:"- %s (%h)" "${PREV_TAG}..HEAD"
+            } > release_notes.md
           else
             echo "## Initial Release" > release_notes.md
           fi
           if [ -n "$REASON" ]; then
             printf '\n\n## Rebuild\n\n%s\n' "$REASON" >> release_notes.md
           fi
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          tag_name: v${{ steps.version.outputs.image_tag }}
-          body_path: release_notes.md
-          generate_release_notes: false
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
+            --notes-file release_notes.md

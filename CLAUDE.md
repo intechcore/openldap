@@ -35,11 +35,13 @@ See the "Where the binaries come from" section in README.md.
   toggles, and a slapcat→slapadd backup round-trip) and
   `test-migration.sh` (2.4→2.6 via osixia/openldap:1.5.0 → slapcat → reimport),
   and `test-arch.sh` (buildx-builds `linux/arm64` and smoke-tests it under QEMU,
-  since CI otherwise only runs the native amd64 image). Anonymized synthetic
+  a quick local check; CI runs the full integration test on arm64). Anonymized synthetic
   fixtures under `fixtures/` (people/groups/policies + `overlays/10-ppolicy.ldif`).
-- `.github/workflows/` — build+test (integration + 2.4→2.6 migration + emulated
-  arm64 smoke), lint, security (Trivy), release, and a weekly rebuild when the
-  `debian:trixie-slim` base changed or Trivy finds fixable CRITICAL/HIGH issues.
+- `.github/workflows/` — `ci.yml` (lint with shellcheck, hadolint, actionlint,
+  zizmor and trivy config; integration tests on amd64 and arm64, the 2.4→2.6
+  migration on amd64; Trivy: CRITICAL fails, HIGH goes to a tracking issue),
+  release, and a weekly rebuild when the `debian:trixie-slim` base changed or
+  Trivy finds fixable CRITICAL/HIGH issues. `.trivyignore` accepts DS-0002 (root).
 
 ## Key facts
 
