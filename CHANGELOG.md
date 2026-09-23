@@ -6,6 +6,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 ## [Unreleased]
 
 ### Added
+- `SECURITY.md`, `CONTRIBUTING.md` and `.editorconfig`. OCI labels `vendor`,
+  `authors`, `revision` and `created`; the Release workflow passes the commit
+  and the build time.
+- Examples use `example.org` in place of the Intechcore domain.
 - Weekly `Rebuild` workflow. It releases the next build when the base image
   was rebuilt under the same tag, or when Trivy finds fixable CRITICAL or HIGH
   vulnerabilities in the published image. New labels

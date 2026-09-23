@@ -34,7 +34,7 @@ which lets OpenLDAP 2.6 write the mdb in its current format.
 ```bash
 # Dump the data backend as LDIF (suffix-scoped; -o ldif-wrap=no keeps every
 # attribute on a single line so the filter below is reliable).
-docker exec itc-openldap slapcat -o ldif-wrap=no -b "dc=intechcore,dc=online" > dump.ldif
+docker exec openldap slapcat -o ldif-wrap=no -b "dc=example,dc=org" > dump.ldif
 ```
 
 The `cn=config` from 2.4 is **not** reused — the new image regenerates config
@@ -81,7 +81,7 @@ changetype: add
 objectClass: olcOverlayConfig
 objectClass: olcPPolicyConfig
 olcOverlay: ppolicy
-olcPPolicyDefault: cn=default,ou=policies,dc=intechcore,dc=online
+olcPPolicyDefault: cn=default,ou=policies,dc=example,dc=org
 olcPPolicyHashCleartext: TRUE
 ```
 
@@ -93,15 +93,15 @@ contains the base entry and OUs, that is fine; duplicates are ignored.
 ### 3. Verify
 
 ```bash
-docker exec itc-openldap ldapsearch -x -H ldapi://%2Frun%2Fslapd%2Fldapi \
-  -D "cn=admin,dc=intechcore,dc=online" -w "$LDAP_ADMIN_PASSWORD" \
-  -b "dc=intechcore,dc=online" -LLL dn
+docker exec openldap ldapsearch -x -H ldapi://%2Frun%2Fslapd%2Fldapi \
+  -D "cn=admin,dc=example,dc=org" -w "$LDAP_ADMIN_PASSWORD" \
+  -b "dc=example,dc=org" -LLL dn
 ```
 
 ## Alternative: reuse the existing volume in place
 
 Because both images use Debian paths, you *can* point the new container at the
-existing `itc-openldap-data` / `itc-openldap-config` volumes. OpenLDAP mdb is
+existing `openldap-data` / `openldap-config` volumes. OpenLDAP mdb is
 generally forward-compatible 2.4 → 2.6, but this is **not** guaranteed across a
 two-minor jump and you lose the chance to clean stale config. Only do this with
 a backup and a tested rollback. The export/reimport path above is preferred.

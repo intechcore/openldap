@@ -20,8 +20,8 @@ services:
     # renovate: image=ghcr.io/intechcore/openldap
     image: ghcr.io/intechcore/openldap:2.6.15-2
     environment:
-      LDAP_ORGANISATION: "Intechcore GmbH"
-      LDAP_DOMAIN: "intechcore.online"
+      LDAP_ORGANISATION: "Example Inc."
+      LDAP_DOMAIN: "example.org"
       LDAP_ADMIN_PASSWORD: "change-me"
       LDAP_CONFIG_PASSWORD: "change-me-too"
       LDAP_READONLY_USER: "true"
@@ -261,6 +261,10 @@ see [MIGRATION.md](MIGRATION.md).
 ## Migrating from osixia/openldap
 
 See [MIGRATION.md](MIGRATION.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately, see [SECURITY.md](SECURITY.md).
 
 ## License
 

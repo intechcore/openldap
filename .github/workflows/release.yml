@@ -38,10 +38,15 @@ jobs:
     outputs:
       base_image: ${{ steps.base.outputs.image }}
       base_digest: ${{ steps.base.outputs.digest }}
+      build_date: ${{ steps.date.outputs.value }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Build date
+        id: date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Resolve the base image digest
         id: base
@@ -94,6 +99,8 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ needs.prepare.outputs.base_image }}
             BASE_DIGEST=${{ needs.prepare.outputs.base_digest }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
           no-cache: ${{ inputs.no_cache == true }}
           cache-from: type=gha,scope=${{ matrix.arch }}
 
@@ -113,6 +120,8 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ needs.prepare.outputs.base_image }}
             BASE_DIGEST=${{ needs.prepare.outputs.base_digest }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
           provenance: false
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 

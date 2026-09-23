@@ -16,13 +16,14 @@ FROM debian:trixie-slim
 ARG OPENLDAP_VERSION=2.6.13
 ARG SYMAS_VERSION=2.6.13-3trixie1
 
-LABEL maintainer="Sergey Grigoriev <s.grigoriev@intechcore.com>"
-LABEL org.opencontainers.image.title="openldap"
-LABEL org.opencontainers.image.description="OpenLDAP 2.6 LTS directory server from the official Symas packages on Debian 13 — self-maintained replacement for osixia/openldap"
-LABEL org.opencontainers.image.source="https://github.com/intechcore/openldap"
-LABEL org.opencontainers.image.documentation="https://github.com/intechcore/openldap/blob/main/README.md"
-LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.version="${OPENLDAP_VERSION}"
+LABEL org.opencontainers.image.title="openldap" \
+      org.opencontainers.image.description="OpenLDAP 2.6 LTS directory server from the official Symas packages on Debian 13 — self-maintained replacement for osixia/openldap" \
+      org.opencontainers.image.source="https://github.com/intechcore/openldap" \
+      org.opencontainers.image.documentation="https://github.com/intechcore/openldap/blob/main/README.md" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="Intechcore GmbH" \
+      org.opencontainers.image.authors="Sergey Grigoriev <s.grigoriev@intechcore.com>" \
+      org.opencontainers.image.version="${OPENLDAP_VERSION}"
 
 # Silence debconf's interactive frontend during apt (no TTY in the build). As an
 # ARG it applies only to build-time RUN steps and is not persisted in the image.
@@ -89,11 +90,16 @@ EXPOSE 389 636
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["/bin/sh", "-c", "ldapsearch -x -H ldapi://%2Frun%2Fslapd%2Fldapi -b '' -s base -LLL 1.1 >/dev/null 2>&1 || exit 1"]
 
-# Base image the build started from, passed in by the release workflow. The
-# weekly rebuild compares the digest with the current upstream one.
+# Build metadata and the base image the build started from, passed in by the
+# release workflow. The weekly rebuild compares the base digest with the
+# current upstream one.
+ARG GIT_SHA=unknown
+ARG BUILD_DATE=unknown
 ARG BASE_IMAGE=unknown
 ARG BASE_DIGEST=unknown
-LABEL org.opencontainers.image.base.name="${BASE_IMAGE}" \
+LABEL org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.base.name="${BASE_IMAGE}" \
       org.opencontainers.image.base.digest="${BASE_DIGEST}"
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

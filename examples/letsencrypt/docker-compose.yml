@@ -36,8 +36,8 @@ services:
     restart: unless-stopped
     depends_on: [certbot]
     environment:
-      LDAP_ORGANISATION: "Intechcore GmbH"
-      LDAP_DOMAIN: "intechcore.online"
+      LDAP_ORGANISATION: "Example Inc."
+      LDAP_DOMAIN: "example.org"
       LDAP_ADMIN_PASSWORD: "change-me"
       LDAP_CONFIG_PASSWORD: "change-me-too"
       LDAP_TLS: "true"
