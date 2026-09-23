@@ -81,7 +81,7 @@ MODULE_PATH="${MODULE_PATH:-/opt/symas/lib/openldap}"
 # regardless of the compiled-in default.
 LDAPI_URL="ldapi://%2Frun%2Fslapd%2Fldapi"
 
-# Derive the base DN from the domain: intechcore.online -> dc=intechcore,dc=online
+# Derive the base DN from the domain: example.org -> dc=example,dc=org
 LDAP_BASE_DN="${LDAP_BASE_DN:-dc=$(echo "$LDAP_DOMAIN" | sed 's/\./,dc=/g')}"
 
 # ─── Locale & timezone ──────────────────────────────────────────────────────

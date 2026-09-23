@@ -44,7 +44,7 @@ deploy hook publishes a readable copy and keeps the private key group-only.
      --dns-cloudflare-propagation-seconds 30 \
      -m you@example.com --agree-tos --no-eff-email \
      --deploy-hook /deploy-hook.sh \
-     -d ldap.intechcore.online
+     -d ldap.example.org
    ```
 
 4. **Start the stack:**
@@ -71,7 +71,7 @@ docker compose exec openldap reload-tls
 ## Verify
 
 ```sh
-echo | openssl s_client -connect ldap.intechcore.online:636 2>/dev/null \
+echo | openssl s_client -connect ldap.example.org:636 2>/dev/null \
   | openssl x509 -noout -issuer -subject -enddate
 # issuer should be Let's Encrypt (R10/R11/E1…)
 ```
