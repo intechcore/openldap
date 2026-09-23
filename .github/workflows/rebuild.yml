@@ -1,0 +1,111 @@
+name: Rebuild
+
+# The image builds on debian:trixie-slim and installs its packages with apt.
+# Debian ships security fixes as package updates and rebuilds the base image
+# under the same tag. Neither changes a file in git, so Renovate cannot see
+# them. This workflow checks the published image once a week and releases a
+# new build (2.6.13-4 -> 2.6.13-5) when one of these is true:
+#   - the upstream base image digest differs from the one the image was built on
+#   - Trivy finds fixable CRITICAL or HIGH vulnerabilities in the published image
+
+on:
+  schedule:
+    - cron: '15 5 * * 1'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      rebuild: ${{ steps.decide.outputs.rebuild }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull published image
+        id: published
+        run: |
+          image="${REGISTRY}/${IMAGE_NAME}:latest"
+          docker pull -q --platform linux/amd64 "$image"
+          digest=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.base.digest"}}' "$image")
+          {
+            echo "image=$image"
+            echo "base_digest=$digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve upstream base image digest
+        id: upstream
+        run: |
+          base=$(awk '$1 == "FROM" { print $2; exit }' Dockerfile)
+          digest=$(docker buildx imagetools inspect "$base" --format '{{json .Manifest}}' | jq -r .digest)
+          {
+            echo "image=$base"
+            echo "digest=$digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Scan published image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.published.outputs.image }}
+          format: json
+          output: trivy-results.json
+          exit-code: '0'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Decide
+        id: decide
+        env:
+          BASE: ${{ steps.upstream.outputs.image }}
+          BUILT_ON: ${{ steps.published.outputs.base_digest }}
+          UPSTREAM: ${{ steps.upstream.outputs.digest }}
+        run: |
+          fixable=$(jq '[.Results[]?.Vulnerabilities[]?] | length' trivy-results.json)
+          reasons=()
+          if [ "$BUILT_ON" != "$UPSTREAM" ]; then
+            reasons+=("Base image ${BASE} changed: ${BUILT_ON:-unknown} -> ${UPSTREAM}.")
+          fi
+          if [ "$fixable" -gt 0 ]; then
+            reasons+=("Trivy found ${fixable} fixable CRITICAL/HIGH vulnerabilities in the published image.")
+          fi
+
+          if [ ${#reasons[@]} -eq 0 ]; then
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            echo "No rebuild needed: base image unchanged, no fixable findings." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          reason=$(printf '%s ' "${reasons[@]}")
+          {
+            echo "rebuild=true"
+            echo "reason=${reason% }"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## Rebuild needed"
+            printf -- '- %s\n' "${reasons[@]}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: check
+    if: needs.check.outputs.rebuild == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      reason: ${{ needs.check.outputs.reason }}
+      no_cache: true

@@ -8,13 +8,13 @@
 # fast (no QEMU cross-compile) while still using authoritative binaries.
 # Bump the pinned version with `make bump-openldap V=<version>`.
 
-FROM debian:stable-slim
+FROM debian:trixie-slim
 
 # Upstream OpenLDAP version (used for tags/labels) and the exact Symas apt
 # package revision to install (pinned for reproducible builds).
 # renovate: openldap
-ARG OPENLDAP_VERSION=2.6.15
-ARG SYMAS_VERSION=2.6.15-1trixie1
+ARG OPENLDAP_VERSION=2.6.13
+ARG SYMAS_VERSION=2.6.13-3trixie1
 
 LABEL maintainer="Sergey Grigoriev <s.grigoriev@intechcore.com>"
 LABEL org.opencontainers.image.title="openldap"
@@ -88,6 +88,13 @@ EXPOSE 389 636
 # regardless of TLS configuration and needs no credentials.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["/bin/sh", "-c", "ldapsearch -x -H ldapi://%2Frun%2Fslapd%2Fldapi -b '' -s base -LLL 1.1 >/dev/null 2>&1 || exit 1"]
+
+# Base image the build started from, passed in by the release workflow. The
+# weekly rebuild compares the digest with the current upstream one.
+ARG BASE_IMAGE=unknown
+ARG BASE_DIGEST=unknown
+LABEL org.opencontainers.image.base.name="${BASE_IMAGE}" \
+      org.opencontainers.image.base.digest="${BASE_DIGEST}"
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["slapd"]
