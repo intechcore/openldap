@@ -1,0 +1,196 @@
+name: CI
+
+# Lint, tests on amd64 and arm64, and the Trivy scan of the image. Every pull
+# request runs it, and main after a merge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          scandir: .
+          severity: warning
+
+      - name: Hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: Dockerfile
+
+      # Checks the workflows themselves: expressions, inputs, shell in run.
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+      # Security audit of the workflows, for example template injection or
+      # credentials left in the checkout. Informational findings do not fail.
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          min-severity: low
+          version: 1.30.1
+
+      # Misconfigurations in the Dockerfile, before any image is built.
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+
+  # Both architectures are built and tested. arm64 runs under QEMU emulation.
+  test:
+    name: test (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: openldap:test
+          platforms: linux/${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Run the integration tests
+        run: ./tests/integration/test-integration.sh openldap:test
+
+      - name: Run the 2.4 to 2.6 migration test
+        if: matrix.arch == 'amd64'
+        run: ./tests/integration/test-migration.sh openldap:test
+
+  # Fixable vulnerabilities in the built image. CRITICAL fails the build. HIGH
+  # goes to a tracking issue only: an unrelated pull request must not turn red
+  # because Debian released a fix. The weekly rebuild picks the fix up.
+  trivy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: openldap:scan
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: openldap:scan
+          format: json
+          output: trivy-results.json
+          exit-code: '0'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Summarize findings
+        id: scan
+        run: |
+          crit=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json)
+          high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json)
+          {
+            echo "critical=$crit"
+            echo "high=$high"
+            echo "total=$((crit + high))"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "| Package | CVE | Severity | Installed | Fixed |"
+            echo "|---|---|---|---|---|"
+            jq -r '.Results[]? | .Vulnerabilities[]? |
+              "| \(.PkgName) | [\(.VulnerabilityID)](\(.PrimaryURL)) | \(.Severity) | \(.InstalledVersion) | \(.FixedVersion // "-") |"' \
+              trivy-results.json
+          } > findings.md
+          echo "## Trivy image scan: ${crit} CRITICAL, ${high} HIGH (fixable)" >> "$GITHUB_STEP_SUMMARY"
+          if [ $((crit + high)) -gt 0 ]; then
+            cat findings.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No fixable CRITICAL or HIGH vulnerabilities." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Push events only: pull requests from forks get a read-only token.
+      - name: Report to the tracking issue
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CRITICAL: ${{ steps.scan.outputs.critical }}
+          HIGH: ${{ steps.scan.outputs.high }}
+          TOTAL: ${{ steps.scan.outputs.total }}
+        run: |
+          # One tracking issue for the image.
+          title="🛡️ Trivy: unresolved image vulnerabilities"
+          label="security"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          gh label create "$label" --color B60205 \
+            --description "Automated Trivy scan findings" 2>/dev/null || true
+          existing=$(gh issue list --state open --label "$label" --json number,title |
+            jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty')
+
+          if [ "$TOTAL" -eq 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "Scan on \`${GITHUB_SHA:0:7}\` is clean. Closing."
+              gh issue close "$existing"
+            fi
+            exit 0
+          fi
+
+          {
+            echo "Trivy found **${CRITICAL} CRITICAL** and **${HIGH} HIGH** fixable vulnerabilities."
+            echo ""
+            echo "Commit: \`${GITHUB_SHA:0:7}\`, [workflow run](${run_url})"
+            echo ""
+            cat findings.md
+            echo ""
+            echo "_CRITICAL fails the build, HIGH is reported here. The weekly rebuild picks up fixes._"
+          } > issue-body.md
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file issue-body.md
+          else
+            gh issue create --title "$title" --label "$label" --body-file issue-body.md
+          fi
+
+      - name: Fail on CRITICAL
+        if: steps.scan.outputs.critical != '0'
+        env:
+          CRITICAL: ${{ steps.scan.outputs.critical }}
+        run: |
+          echo "::error::Trivy found ${CRITICAL} fixable CRITICAL vulnerabilities"
+          exit 1

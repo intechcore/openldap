@@ -1,0 +1,6 @@
+# zizmor configuration, used by the lint job in ci.yml.
+rules:
+  # zizmor suggests the new $/ syntax for reusable workflows of this
+  # repository. actionlint does not know it yet, so keep ./ for now.
+  self-repository:
+    disable: true
