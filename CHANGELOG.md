@@ -6,6 +6,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 ## [Unreleased]
 
 ### Added
+- Build provenance and SBOM attestations for every release, checked with
+  `gh attestation verify`. OpenSSF Scorecard workflow and README badges. arm64
+  builds and tests run on native runners instead of QEMU.
 - `SECURITY.md`, `CONTRIBUTING.md` and `.editorconfig`. OCI labels `vendor`,
   `authors`, `revision` and `created`; the Release workflow passes the commit
   and the build time.
