@@ -1,5 +1,10 @@
 name: Release
 
+# Builds, tests and publishes the image. Each architecture is built and
+# tested on its own job, and exactly that image is pushed by digest. Only when
+# both passed, the publish job joins them into one multi-arch image with tags
+# and creates the GitHub release.
+
 on:
   workflow_dispatch:
   # Called by rebuild.yml when the base image or its packages changed.
@@ -14,31 +19,31 @@ on:
         type: boolean
         default: false
 
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  release:
+  # Resolves the base image once, so both architectures record the same digest.
+  prepare:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
-
+      contents: read
+    outputs:
+      base_image: ${{ steps.base.outputs.image }}
+      base_digest: ${{ steps.base.outputs.digest }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Resolve base image digest
+      - name: Resolve the base image digest
         id: base
         run: |
           base=$(awk '$1 == "FROM" { print $2; exit }' Dockerfile)
@@ -49,70 +54,152 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Base image: $base@$digest"
 
-      - name: Build image for testing
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+  build:
+    name: build (${{ matrix.arch }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          context: .
-          load: true
-          tags: openldap:test
-          build-args: |
-            BASE_IMAGE=${{ steps.base.outputs.image }}
-            BASE_DIGEST=${{ steps.base.outputs.digest }}
-          no-cache: ${{ inputs.no_cache == true }}
-          cache-from: type=gha
+          persist-credentials: false
 
-      - name: Run tests
-        run: ./tests/integration/test-integration.sh openldap:test
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
-      - name: Determine version
-        id: version
-        run: |
-          # Extract the OpenLDAP version from the built slapd binary.
-          LDAP_VERSION=$(docker run --rm --entrypoint "" openldap:test \
-            sh -c 'slapd -VV 2>&1' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-          echo "slapd version: $LDAP_VERSION"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-          # Get existing tags from registry
-          EXISTING_TAGS=$(gh api "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${GITHUB_REPOSITORY#*/}/versions" \
-            --paginate --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
-
-          # Find next available build suffix
-          SUFFIX=1
-          while echo "$EXISTING_TAGS" | grep -qx "${LDAP_VERSION}-${SUFFIX}"; do
-            SUFFIX=$((SUFFIX + 1))
-          done
-
-          IMAGE_TAG="${LDAP_VERSION}-${SUFFIX}"
-          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-          echo "ldap_version=$LDAP_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Selected version: $IMAGE_TAG"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # no_cache applies here only. The push below takes these layers from the
+      # local builder cache, so it pushes exactly the tested image.
+      - name: Build the image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.image_tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.ldap_version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          load: true
+          tags: openldap:test
+          platforms: linux/${{ matrix.arch }}
           build-args: |
-            BASE_IMAGE=${{ steps.base.outputs.image }}
-            BASE_DIGEST=${{ steps.base.outputs.digest }}
+            BASE_IMAGE=${{ needs.prepare.outputs.base_image }}
+            BASE_DIGEST=${{ needs.prepare.outputs.base_digest }}
           no-cache: ${{ inputs.no_cache == true }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+
+      - name: Run the integration tests
+        run: ./tests/integration/test-integration.sh openldap:test
+
+      - name: Run the 2.4 to 2.6 migration test
+        if: matrix.arch == 'amd64'
+        run: ./tests/integration/test-migration.sh openldap:test
+
+      - name: Push the tested image by digest
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            BASE_IMAGE=${{ needs.prepare.outputs.base_image }}
+            BASE_DIGEST=${{ needs.prepare.outputs.base_digest }}
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Save the digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p build
+          echo "$DIGEST" > build/digest
+
+      # The OpenLDAP version comes from the image itself.
+      - name: Record the version
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          version=$(docker run --rm --platform "linux/$ARCH" --entrypoint "" openldap:test \
+            sh -c 'slapd -VV 2>&1' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "OpenLDAP $version"
+          echo "$version" > build/version
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-${{ matrix.arch }}
+          path: build/
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: build-*
+          path: builds
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine the tag
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(cat builds/build-amd64/version)
+          if [ "$VERSION" != "$(cat builds/build-arm64/version)" ]; then
+            echo "::error::amd64 and arm64 report different versions"
+            exit 1
+          fi
+          EXISTING_TAGS=$(gh api "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${GITHUB_REPOSITORY#*/}/versions" \
+            --paginate --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
+          SUFFIX=1
+          while echo "$EXISTING_TAGS" | grep -qx "${VERSION}-${SUFFIX}"; do
+            SUFFIX=$((SUFFIX + 1))
+          done
+          {
+            echo "version=$VERSION"
+            echo "image_tag=${VERSION}-${SUFFIX}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Selected version: ${VERSION}-${SUFFIX}"
+
+      - name: Create the multi-arch image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          TAG: ${{ steps.version.outputs.image_tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # shellcheck disable=SC2046 # the conditional tag is empty or two words
+          docker buildx imagetools create \
+            -t "${IMAGE}:${TAG}" \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:latest" \
+            "${IMAGE}@$(cat builds/build-amd64/digest)" \
+            "${IMAGE}@$(cat builds/build-arm64/digest)"
+          docker buildx imagetools inspect "${IMAGE}:${TAG}"
 
       # gh creates the tag through the API, so the checkout keeps no
       # credentials. The notes list the commits since the previous release.
@@ -120,6 +207,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v${{ steps.version.outputs.image_tag }}
+          VERSION: ${{ steps.version.outputs.version }}
           REASON: ${{ inputs.reason }}
         run: |
           PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | head -1)

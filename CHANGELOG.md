@@ -76,6 +76,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   on amd64 and arm64. Trivy fails on CRITICAL and reports HIGH to a tracking
   issue. All workflows set their token permissions and keep no credentials in
   the checkout. Releases are created with `gh release create`.
+- The Release workflow builds and tests each architecture on its own job and
+  pushes exactly the tested image by digest. Before, the tested amd64 image and
+  the pushed image were two separate builds, and arm64 was not tested.
 - Symas pin back to `2.6.13-3trixie1`. Symas removed 2.6.15 from its
   trixie repository on 2026-09-17, so `2.6.15-1trixie1` no longer installs.
 - Base image `debian:stable-slim` → `debian:trixie-slim`, so an automatic
