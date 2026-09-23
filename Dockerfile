@@ -13,8 +13,8 @@ FROM debian:stable-slim
 # Upstream OpenLDAP version (used for tags/labels) and the exact Symas apt
 # package revision to install (pinned for reproducible builds).
 # renovate: openldap
-ARG OPENLDAP_VERSION=2.6.15
-ARG SYMAS_VERSION=2.6.15-1trixie1
+ARG OPENLDAP_VERSION=2.6.13
+ARG SYMAS_VERSION=2.6.13-3trixie1
 
 LABEL maintainer="Sergey Grigoriev <s.grigoriev@intechcore.com>"
 LABEL org.opencontainers.image.title="openldap"

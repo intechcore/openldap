@@ -65,3 +65,7 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - CI: build + integration + migration + arm64-smoke tests, hadolint/shellcheck
   lint, Trivy scan, multi-arch (`amd64`/`arm64`) release to ghcr.io.
 - `MIGRATION.md` with the slapcat → strip → reimport recipe from osixia.
+
+### Changed
+- Symas pin back to `2.6.13-3trixie1`. Symas removed 2.6.15 from its
+  trixie repository on 2026-09-17, so `2.6.15-1trixie1` no longer installs.
