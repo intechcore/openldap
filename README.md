@@ -211,7 +211,8 @@ make bump-openldap V=2.6.14      # bump version + resolve Symas package revision
 
 ## Releasing
 
-Run the **Release** workflow (`workflow_dispatch`). It builds, tests, derives
+Run the **Release** workflow (`workflow_dispatch`). It builds and tests amd64
+and arm64 on separate jobs, pushes exactly the tested images, derives
 the version from `slapd -VV`, and pushes multi-arch tags
 `<version>-<n>`, `<version>`, and `latest` to `ghcr.io/intechcore/openldap`.
 
