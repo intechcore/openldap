@@ -17,6 +17,9 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# No default token permissions. Each job asks for what it needs.
+permissions: {}
+
 jobs:
   check:
     runs-on: ubuntu-latest

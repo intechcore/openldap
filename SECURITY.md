@@ -2,8 +2,9 @@
 
 ## Reporting a vulnerability
 
-Report a vulnerability privately through GitHub: open the **Security** tab of this repository
-and choose **Report a vulnerability**. Do not open a public issue for it.
+Report a vulnerability privately through GitHub:
+https://github.com/intechcore/openldap/security/advisories/new
+(the **Security** tab, **Report a vulnerability**). Do not open a public issue for it.
 
 We answer within a week. The fix goes into the next image release, and the GitHub release notes
 name it.
