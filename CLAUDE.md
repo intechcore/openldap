@@ -138,6 +138,13 @@ See the "Where the binaries come from" section in README.md.
   the locale (`C.UTF-8` default; others generated on first boot via `locale-gen`).
   `tzdata` + `locales` are installed in the image.
 
+## Release notes
+
+`.github/scripts/release-notes.sh` writes them from the rebuild reason and the
+`[Unreleased]` entries of CHANGELOG.md added since the previous tag, plus a
+components table. Write each CHANGELOG entry for users; the raw commits only
+go in a collapsed block.
+
 ## Common commands
 
 ```bash

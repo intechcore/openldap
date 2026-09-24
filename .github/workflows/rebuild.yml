@@ -80,13 +80,18 @@ jobs:
           BUILT_ON: ${{ steps.published.outputs.base_digest }}
           UPSTREAM: ${{ steps.upstream.outputs.digest }}
         run: |
-          fixable=$(jq '[.Results[]?.Vulnerabilities[]?] | length' trivy-results.json)
+          # One entry per fixable finding, "CVE in package version (fixed in
+          # version)", for the release notes. At most ten are named.
+          findings=$(jq -r '[.Results[]?.Vulnerabilities[]?
+            | "\(.VulnerabilityID) in \(.PkgName) \(.InstalledVersion) (fixed in \(.FixedVersion))"] | unique
+            | (.[:10] | join(", ")) + (if length > 10 then ", and \(length - 10) more" else "" end)' trivy-results.json)
+          fixable=$(jq '[.Results[]?.Vulnerabilities[]? | .VulnerabilityID + .PkgName] | unique | length' trivy-results.json)
           reasons=()
           if [ "$BUILT_ON" != "$UPSTREAM" ]; then
-            reasons+=("Base image ${BASE} changed: ${BUILT_ON:-unknown} -> ${UPSTREAM}.")
+            reasons+=("Base image ${BASE%@*} rebuilt upstream (digest ${BUILT_ON:-unknown} -> ${UPSTREAM}).")
           fi
           if [ "$fixable" -gt 0 ]; then
-            reasons+=("Trivy found ${fixable} fixable CRITICAL/HIGH vulnerabilities in the published image.")
+            reasons+=("Fixes ${fixable} CRITICAL/HIGH vulnerabilities found by Trivy: ${findings}.")
           fi
 
           if [ ${#reasons[@]} -eq 0 ]; then

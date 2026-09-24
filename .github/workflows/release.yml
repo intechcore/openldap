@@ -167,7 +167,7 @@ jobs:
           retention-days: 1
 
   publish:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -244,7 +244,9 @@ jobs:
           push-to-registry: true
 
       # gh creates the tag through the API, so the checkout keeps no
-      # credentials. The notes list the commits since the previous release.
+      # credentials. The notes summarize the release from the rebuild reason
+      # and CHANGELOG.md, list the components and fold the commits since the
+      # previous release below, see .github/scripts/release-notes.sh.
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -252,20 +254,17 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           REASON: ${{ inputs.reason }}
           PROVENANCE: ${{ steps.provenance.outputs.bundle-path }}
+          BASE_IMAGE: ${{ needs.prepare.outputs.base_image }}
+          BASE_DIGEST: ${{ needs.prepare.outputs.base_digest }}
         run: |
           PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | head -1)
-          if [ -n "$PREV_TAG" ]; then
-            {
-              echo "## Changes since ${PREV_TAG}"
-              echo ""
-              git log --pretty=format:"- %s (%h)" "${PREV_TAG}..HEAD"
-            } > release_notes.md
-          else
-            echo "## Initial Release" > release_notes.md
-          fi
-          if [ -n "$REASON" ]; then
-            printf '\n\n## Rebuild\n\n%s\n' "$REASON" >> release_notes.md
-          fi
+          symas=$(awk -F= '$1 == "ARG SYMAS_VERSION" { print $2; exit }' Dockerfile)
+          PREV_TAG="$PREV_TAG" PRODUCT=OpenLDAP .github/scripts/release-notes.sh \
+            "OpenLDAP=${VERSION}" \
+            "Symas packages=${symas}" \
+            "Base image=${BASE_IMAGE#docker.io/library/}" \
+            "Base image digest=${BASE_DIGEST}" > release_notes.md
+          cat release_notes.md
           # The signed provenance and the SBOMs travel with the release.
           mkdir -p assets
           cp "$PROVENANCE" "assets/openldap-${TAG}.intoto.jsonl"
