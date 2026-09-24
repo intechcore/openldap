@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=intechcore_openldap&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=intechcore_openldap)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=intechcore_openldap&metric=coverage)](https://sonarcloud.io/summary/new_code?id=intechcore_openldap)
 
 Self-maintained OpenLDAP **2.6 LTS** directory server, built from the official
 [Symas](https://www.symas.com/symas-openldap-packages) OpenLDAP 2.6 LTS packages
