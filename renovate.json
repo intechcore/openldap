@@ -1,23 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests"
+    "github>intechcore/renovate-config"
   ],
-  "automerge": true,
-  "automergeType": "pr",
-  "platformAutomerge": false,
   "customManagers": [
-    {
-      "customType": "regex",
-      "description": "Lint and scan tool images in the Makefile, pinned by tag and digest",
-      "managerFilePatterns": [
-        "/^Makefile$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[A-Z_]+\\s+\\?=\\s+\\S+?:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
-      ]
-    },
     {
       "customType": "regex",
       "description": "Pinned Symas OpenLDAP package revision (the exact .deb installed), tracked from the Symas apt repo",
@@ -66,14 +52,6 @@
       "datasourceTemplate": "docker"
     }
   ],
-  "hostRules": [
-    {
-      "matchHost": "ghcr.io",
-      "hostType": "docker",
-      "username": "itcsrvs",
-      "password": "{{ secrets.GHCR_TOKEN }}"
-    }
-  ],
   "packageRules": [
     {
       "description": "Group both OpenLDAP pins into one PR; not automerged — the build must pass with the new Symas version, and `make bump-openldap` keeps the two pins in sync.",
@@ -97,7 +75,7 @@
       "pinDigests": true
     },
     {
-      "description": "Own image, private on ghcr.io (see hostRules). Every release publishes the exact build tag (2.6.15-2) next to the moving tag (2.6.15) and latest. Regex versioning tracks only the exact one and orders by the build number. Docker versioning would read -N as a compatibility tag and hide rebuilds.",
+      "description": "Own image on ghcr.io. Every release publishes the exact build tag (2.6.15-2) next to the moving tag (2.6.15) and latest. Regex versioning tracks only the exact one and orders by the build number. Docker versioning would read -N as a compatibility tag and hide rebuilds.",
       "matchPackageNames": [
         "ghcr.io/intechcore/openldap"
       ],
