@@ -211,7 +211,8 @@ make test                        # build + integration tests (needs docker compo
 make test-migration              # build + 2.4 -> 2.6 migration test
 make test-arch                   # build linux/arm64 + smoke-test under emulation
 make coverage                    # line coverage of the shell scripts, see below
-make lint                        # shellcheck + hadolint
+make contract                    # every documented variable has a test
+make lint                        # contract + shellcheck + hadolint
 make scan                        # build + trivy scan
 make bump-openldap V=2.6.14      # bump version + resolve Symas package revision
 ```
@@ -232,6 +233,10 @@ The report goes to `build/coverage.xml` (SonarQube format) and `build/html/`. Th
 `sonar` CI job runs the same script and sends the report to SonarCloud. The tests
 switch to coverage mode when `COVERAGE_DIR` names a host directory. Without it
 they behave as before.
+
+`make contract` runs `tests/contract.sh`. It checks that every variable in the
+Configuration table above appears in a test under `tests/`. If CI cannot test a
+variable, list it in `tests/contract-allowlist.txt` with a reason.
 
 ## Releasing
 

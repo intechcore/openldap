@@ -10,6 +10,12 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   `sonar` CI job runs the integration and migration tests against the
   `coverage` stage of the Dockerfile and sends the report to SonarCloud. The
   published image does not change. Run it locally with `make coverage`.
+- Configuration contract check `tests/contract.sh` in the `lint` job: every
+  variable of the README Configuration table must appear in a test. New
+  integration tests cover `LDAP_TLS_CRT_FILENAME`, `LDAP_TLS_KEY_FILENAME`,
+  `LDAP_TLS_CA_CRT_FILENAME`, `LDAP_TLS_DH_PARAM_FILENAME`,
+  `LDAP_TLS_PROTOCOL_MIN`, `LDAP_TLS_WATCH`, `LDAP_TLS_WATCH_INTERVAL` and
+  `LDAP_UNIQUE_ATTRIBUTES`.
 - Build provenance and SBOM attestations for every release, checked with
   `gh attestation verify`. OpenSSF Scorecard workflow and README badges. arm64
   builds and tests run on native runners instead of QEMU.

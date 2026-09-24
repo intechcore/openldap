@@ -31,7 +31,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=73
+TOTAL=77
 
 # Standalone containers spun up by the configuration-variant tests.
 # Opt-in coverage mode, used by tests/coverage.sh: COVERAGE_DIR is a host
@@ -66,7 +66,7 @@ rmc() {
     return 0
 }
 
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp openldap-tlsfiles openldap-uniqattr"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -1140,6 +1140,103 @@ if $PX_OK && $PX_FRESH && $PX_EXPIRED; then
     pass "bind works fresh, then is refused once the password expires"
 else
     fail "pwdMaxAge expiry wrong (ready=$PX_OK fresh=$PX_FRESH expired=$PX_EXPIRED)"
+fi
+
+# ── TLS file names, protocol floor, cert watcher ───────────────────────────
+echo "[74/$TOTAL] custom TLS file names and DH params are used"
+TF="$(mktemp -d)"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=named-files" \
+    -keyout "$TF/server.key" -out "$TF/server.pem" 2>/dev/null
+cp "$TF/server.pem" "$TF/chain.pem"
+# The OpenSSL of the image knows the RFC 7919 groups, the host one may not.
+docker run --rm --entrypoint "" "$IMAGE" \
+    openssl genpkey -genparam -algorithm DH -pkeyopt group:ffdhe2048 > "$TF/dh.pem" 2>/dev/null
+chmod 755 "$TF"; chmod 644 "$TF"/*
+rmc openldap-tlsfiles
+drun -d --name openldap-tlsfiles -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=never \
+    -e LDAP_TLS_CRT_FILENAME=server.pem -e LDAP_TLS_KEY_FILENAME=server.key \
+    -e LDAP_TLS_CA_CRT_FILENAME=chain.pem -e LDAP_TLS_DH_PARAM_FILENAME=dh.pem \
+    -e LDAP_TLS_PROTOCOL_MIN=3.4 -e LDAP_TLS_WATCH=true -e LDAP_TLS_WATCH_INTERVAL=2 \
+    -v "$TF:/container/certs" "$IMAGE" >/dev/null 2>&1
+TF_OK=false
+for _ in $(seq 1 90); do docker exec openldap-tlsfiles ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { TF_OK=true; break; }; sleep 1; done
+tf_subject() {
+    docker exec openldap-tlsfiles sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject' 2>/dev/null || true
+    return 0
+}
+TF_CFG=$(docker exec openldap-tlsfiles ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D cn=admin,cn=config -w admin \
+    -b cn=config -s base olcTLSCertificateFile olcTLSCertificateKeyFile olcTLSCACertificateFile \
+    olcTLSDHParamFile olcTLSProtocolMin 2>/dev/null || true)
+TF_SUBJ=$(tf_subject)
+if $TF_OK && echo "$TF_SUBJ" | grep -q "CN=named-files" \
+        && echo "$TF_CFG" | grep -qx "olcTLSCertificateFile: /container/certs/server.pem" \
+        && echo "$TF_CFG" | grep -qx "olcTLSCertificateKeyFile: /container/certs/server.key" \
+        && echo "$TF_CFG" | grep -qx "olcTLSCACertificateFile: /container/certs/chain.pem" \
+        && echo "$TF_CFG" | grep -qx "olcTLSDHParamFile: /container/certs/dh.pem"; then
+    pass "server.pem, server.key, chain.pem and dh.pem configured and served"
+else
+    fail "custom TLS file names not applied (ready=$TF_OK subj='$TF_SUBJ' cfg='$(echo "$TF_CFG" | tr '\n' ' ')')"
+fi
+
+echo "[75/$TOTAL] LDAP_TLS_PROTOCOL_MIN=3.4 refuses TLS 1.2 and accepts TLS 1.3"
+TF_T12=$(docker exec openldap-tlsfiles sh -c 'echo | openssl s_client -connect 127.0.0.1:636 -tls1_2 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
+TF_T13=$(docker exec openldap-tlsfiles sh -c 'echo | openssl s_client -connect 127.0.0.1:636 -tls1_3 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
+if echo "$TF_CFG" | grep -qx "olcTLSProtocolMin: 3.4" && [[ -z "$TF_T12" ]] && [[ -n "$TF_T13" ]]; then
+    pass "olcTLSProtocolMin=3.4, TLS 1.2 refused, TLS 1.3 works"
+else
+    fail "TLS floor 3.4 wrong (tls1.2='$TF_T12' tls1.3='$TF_T13')"
+fi
+
+echo "[76/$TOTAL] LDAP_TLS_WATCH reloads a renewed certificate on its own"
+# Write the new pair next to the old one. Move the key first and the
+# certificate last, since the watcher polls the certificate.
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=watched-renewal" \
+    -keyout "$TF/new.key" -out "$TF/new.pem" 2>/dev/null
+chmod 644 "$TF/new.key" "$TF/new.pem"
+mv -f "$TF/new.key" "$TF/server.key"
+mv -f "$TF/new.pem" "$TF/server.pem"
+TF_RENEWED=false
+for _ in $(seq 1 30); do
+    tf_subject | grep -q "CN=watched-renewal" && { TF_RENEWED=true; break; }
+    sleep 1
+done
+TF_LOG=$(docker logs openldap-tlsfiles 2>&1 | grep -c "TLS certificate change detected" || true)
+rmc openldap-tlsfiles
+rm -rf "$TF"
+if $TF_RENEWED && [[ "${TF_LOG:-0}" -ge 1 ]]; then
+    pass "the watcher saw the renewal and slapd serves the new cert"
+else
+    fail "cert watcher did not reload (renewed=$TF_RENEWED logged=$TF_LOG)"
+fi
+
+echo "[77/$TOTAL] LDAP_UNIQUE_ATTRIBUTES replaces the default attribute list"
+rmc openldap-uniqattr
+drun -d --name openldap-uniqattr -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_UNIQUE=true -e LDAP_UNIQUE_ATTRIBUTES=employeeNumber "$IMAGE" >/dev/null 2>&1
+UA_OK=false
+for _ in $(seq 1 90); do docker exec openldap-uniqattr ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { UA_OK=true; break; }; sleep 1; done
+ua_add() {
+    local cn="$1" mail="$2" number="$3"
+    docker exec -i openldap-uniqattr ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
+dn: cn=$cn,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: $cn
+sn: x
+mail: $mail
+employeeNumber: $number
+EOF
+    return $?
+}
+UA_FIRST=false; UA_DUP_NUM=false; UA_DUP_MAIL=false
+ua_add ua1 same@example.test 1001 && UA_FIRST=true
+ua_add ua2 other@example.test 1001 || UA_DUP_NUM=true
+ua_add ua3 same@example.test 1003 && UA_DUP_MAIL=true
+rmc openldap-uniqattr
+if $UA_OK && $UA_FIRST && $UA_DUP_NUM && $UA_DUP_MAIL; then
+    pass "duplicate employeeNumber rejected, duplicate mail accepted"
+else
+    fail "unique attribute list wrong (ready=$UA_OK first=$UA_FIRST dupNumRejected=$UA_DUP_NUM dupMailAccepted=$UA_DUP_MAIL)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

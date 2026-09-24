@@ -40,9 +40,12 @@ See the "Where the binaries come from" section in README.md.
   and `test-arch.sh` (buildx-builds `linux/arm64` and smoke-tests it under QEMU,
   a quick local check; CI runs the full integration test on arm64). Anonymized synthetic
   fixtures under `fixtures/` (people/groups/policies + `overlays/10-ppolicy.ldif`).
-- `tests/coverage.sh`: line coverage (see Coverage below).
+- `tests/coverage.sh`: line coverage (see Coverage below). `tests/contract.sh`
+  checks that every variable of the README Configuration table appears in a
+  test under `tests/`; `tests/contract-allowlist.txt` exempts variables CI
+  cannot test, one per line with a reason.
 - `.github/workflows/` — `ci.yml` (lint with shellcheck, hadolint, actionlint,
-  zizmor and trivy config; integration tests on
+  zizmor, the configuration contract and trivy config; integration tests on
   amd64 and arm64, the 2.4→2.6 migration on amd64; `sonar`: coverage run and
   SonarCloud scan, skipped without `SONAR_TOKEN`; Trivy: CRITICAL fails, HIGH
   goes to a tracking issue),
@@ -143,6 +146,6 @@ make test            # integration suite (needs docker compose)
 make test-migration  # 2.4 -> 2.6 migration (pulls osixia/openldap:1.5.0)
 make test-arch       # build linux/arm64 + smoke-test under QEMU emulation
 make coverage        # kcov line coverage of the shell scripts (build/)
-make lint            # shellcheck + hadolint
+make lint            # contract + shellcheck + hadolint
 make scan            # trivy
 ```

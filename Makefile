@@ -1,4 +1,4 @@
-.PHONY: build test test-migration test-arch coverage lint scan clean bump-openldap
+.PHONY: build test test-migration test-arch coverage contract lint scan clean bump-openldap
 
 # renovate: openldap
 OPENLDAP_VERSION ?= 2.6.13
@@ -31,7 +31,11 @@ coverage:
 	docker build --target coverage -t $(IMAGE_NAME):coverage .
 	./tests/coverage.sh $(IMAGE_NAME):coverage build
 
-lint:
+# Every variable of the README Configuration table appears in a test.
+contract:
+	./tests/contract.sh
+
+lint: contract
 	shellcheck entrypoint.sh reload-tls.sh tests/*.sh tests/coverage/*.sh tests/integration/*.sh
 	docker run --rm -i hadolint/hadolint < Dockerfile
 
