@@ -10,6 +10,16 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "Lint and scan tool images in the Makefile, pinned by tag and digest",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[A-Z_]+\\s+\\?=\\s+\\S+?:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ]
+    },
+    {
+      "customType": "regex",
       "description": "Pinned Symas OpenLDAP package revision (the exact .deb installed), tracked from the Symas apt repo",
       "managerFilePatterns": [
         "/^Dockerfile$/",

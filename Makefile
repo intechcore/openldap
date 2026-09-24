@@ -8,6 +8,12 @@ SYMAS_VERSION    ?= 2.6.13-3trixie1
 IMAGE_NAME       ?= openldap
 IMAGE_TAG        ?= $(OPENLDAP_VERSION)
 
+# Local lint and scan tools, pinned by digest. Renovate keeps them current.
+# renovate: datasource=docker depName=hadolint/hadolint
+HADOLINT_IMAGE   ?= hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+# renovate: datasource=docker depName=aquasec/trivy
+TRIVY_IMAGE      ?= aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+
 build:
 	docker build \
 		--build-arg OPENLDAP_VERSION=$(OPENLDAP_VERSION) \
@@ -37,10 +43,10 @@ contract:
 
 lint: contract
 	shellcheck entrypoint.sh reload-tls.sh tests/*.sh tests/coverage/*.sh tests/integration/*.sh
-	docker run --rm -i hadolint/hadolint < Dockerfile
+	docker run --rm -i $(HADOLINT_IMAGE) < Dockerfile
 
 scan: build
-	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasecurity/trivy image --severity CRITICAL,HIGH --ignore-unfixed $(IMAGE_NAME):$(IMAGE_TAG)
+	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock $(TRIVY_IMAGE) image --severity CRITICAL,HIGH --ignore-unfixed $(IMAGE_NAME):$(IMAGE_TAG)
 
 clean:
 	docker rmi $(IMAGE_NAME):$(IMAGE_TAG) 2>/dev/null || true
