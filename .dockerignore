@@ -3,6 +3,7 @@
 .idea
 .vscode
 tests
+!tests/coverage/kcov-run.sh
 examples
 Makefile
 CLAUDE.md

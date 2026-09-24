@@ -33,6 +33,12 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 # uniqueMember/member, which the overlay recomputes if re-enabled).
 OPATTRS='structuralObjectClass|entryUUID|entryCSN|creatorsName|createTimestamp|modifiersName|modifyTimestamp|entryDN|subschemaSubentry|hasSubordinates|contextCSN|memberOf|pwdChangedTime|pwdFailureTime|pwdGraceUseTime|pwdHistory|pwdAccountLockedTime|pwdReset'
 
+# Opt-in coverage mode, used by tests/coverage.sh: COVERAGE_DIR is a host
+# directory, mounted at /cov, where the coverage image writes its kcov data.
+COVERAGE_DIR="${COVERAGE_DIR:-}"
+COV_ARGS=()
+[[ -n "$COVERAGE_DIR" ]] && COV_ARGS=(-v "$COVERAGE_DIR:/cov")
+
 PASS=0
 FAIL=0
 TOTAL=8
@@ -40,6 +46,11 @@ TOTAL=8
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
+    # kcov writes its data when the traced process exits. Stop the target
+    # first, a SIGKILL loses the data.
+    if [[ -n "$COVERAGE_DIR" ]]; then
+        docker stop "$DST" >/dev/null 2>&1 || true
+    fi
     docker rm -f "$SRC" "$DST" >/dev/null 2>&1 || true
     rm -rf "$WORK"
 }
@@ -114,7 +125,7 @@ fi
 # ── 3. Reimport into the 2.6 target ─────────────────────────────────────────
 echo "[4/$TOTAL] Boot the 2.6 target and reimport (data via /bootstrap, ppolicy via /overlays)"
 docker rm -f "$DST" >/dev/null 2>&1 || true
-docker run -d --name "$DST" \
+docker run -d --name "$DST" "${COV_ARGS[@]+"${COV_ARGS[@]}"}" \
     -e LDAP_ORGANISATION="Example Test Org" \
     -e LDAP_DOMAIN="example.test" \
     -e LDAP_ADMIN_PASSWORD="$ADMIN_PW" \

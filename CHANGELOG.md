@@ -6,6 +6,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 ## [Unreleased]
 
 ### Added
+- Line coverage of `entrypoint.sh` and `reload-tls.sh` with kcov. The new
+  `sonar` CI job runs the integration and migration tests against the
+  `coverage` stage of the Dockerfile and sends the report to SonarCloud. The
+  published image does not change. Run it locally with `make coverage`.
 - Build provenance and SBOM attestations for every release, checked with
   `gh attestation verify`. OpenSSF Scorecard workflow and README badges. arm64
   builds and tests run on native runners instead of QEMU.

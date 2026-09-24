@@ -1,0 +1,6 @@
+# Coverage mode only, see tests/coverage.sh. Mounts the host directory for
+# the kcov data of the coverage image.
+services:
+  openldap:
+    volumes:
+      - ${COVERAGE_DIR:?set COVERAGE_DIR}:/cov

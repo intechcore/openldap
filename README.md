@@ -210,10 +210,28 @@ make build                       # build openldap:2.6.13
 make test                        # build + integration tests (needs docker compose)
 make test-migration              # build + 2.4 -> 2.6 migration test
 make test-arch                   # build linux/arm64 + smoke-test under emulation
+make coverage                    # line coverage of the shell scripts, see below
 make lint                        # shellcheck + hadolint
 make scan                        # build + trivy scan
 make bump-openldap V=2.6.14      # bump version + resolve Symas package revision
 ```
+
+### Test coverage
+
+`make coverage` measures the line coverage of `entrypoint.sh` and `reload-tls.sh`.
+It builds the `coverage` stage of the Dockerfile, which runs both scripts under
+[kcov](https://github.com/SimonKagstrom/kcov). Then it runs the integration and
+migration tests against that image and merges the results of all containers:
+
+```bash
+docker build --target coverage -t openldap:coverage .
+./tests/coverage.sh openldap:coverage build
+```
+
+The report goes to `build/coverage.xml` (SonarQube format) and `build/html/`. The
+`sonar` CI job runs the same script and sends the report to SonarCloud. The tests
+switch to coverage mode when `COVERAGE_DIR` names a host directory. Without it
+they behave as before.
 
 ## Releasing
 

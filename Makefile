@@ -1,4 +1,4 @@
-.PHONY: build test test-migration test-arch lint scan clean bump-openldap
+.PHONY: build test test-migration test-arch coverage lint scan clean bump-openldap
 
 # renovate: openldap
 OPENLDAP_VERSION ?= 2.6.13
@@ -25,8 +25,14 @@ test-migration: build
 test-arch:
 	./tests/integration/test-arch.sh
 
+# Line coverage of the shell scripts: runs the integration and migration tests
+# against the coverage image. Writes build/coverage.xml and build/html/.
+coverage:
+	docker build --target coverage -t $(IMAGE_NAME):coverage .
+	./tests/coverage.sh $(IMAGE_NAME):coverage build
+
 lint:
-	shellcheck entrypoint.sh reload-tls.sh tests/integration/*.sh
+	shellcheck entrypoint.sh reload-tls.sh tests/*.sh tests/coverage/*.sh tests/integration/*.sh
 	docker run --rm -i hadolint/hadolint < Dockerfile
 
 scan: build
