@@ -48,9 +48,11 @@ jobs:
           image="${REGISTRY}/${IMAGE_NAME}:latest"
           docker pull -q --platform linux/amd64 "$image"
           digest=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.base.digest"}}' "$image")
+          version=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
           {
             echo "image=$image"
             echo "base_digest=$digest"
+            echo "version=$version"
           } >> "$GITHUB_OUTPUT"
 
       - name: Resolve upstream base image digest
@@ -79,7 +81,18 @@ jobs:
           BASE: ${{ steps.upstream.outputs.image }}
           BUILT_ON: ${{ steps.published.outputs.base_digest }}
           UPSTREAM: ${{ steps.upstream.outputs.digest }}
+          PUBLISHED: ${{ steps.published.outputs.version }}
         run: |
+          # A rebuild never publishes an older OpenLDAP than the latest image.
+          # main can pin a lower version when Symas withdraws packages.
+          pinned=$(awk -F= '/^ARG OPENLDAP_VERSION=/ { print $2; exit }' Dockerfile)
+          if [ -n "$PUBLISHED" ] && [ "$pinned" != "$PUBLISHED" ] &&
+            [ "$(printf '%s\n%s\n' "$pinned" "$PUBLISHED" | sort -V | head -n 1)" = "$pinned" ]; then
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            echo "No rebuild: main pins OpenLDAP ${pinned}, lower than the published ${PUBLISHED}." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           # One entry per fixable finding, "CVE in package version (fixed in
           # version)", for the release notes. At most ten are named.
           findings=$(jq -r '[.Results[]?.Vulnerabilities[]?

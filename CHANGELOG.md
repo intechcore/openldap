@@ -13,6 +13,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   collapsed block. `.github/scripts/release-notes.sh` writes them.
 - The weekly rebuild names each Trivy finding it fixes in the release notes:
   CVE, package, installed and fixed version.
+- A release never publishes an older OpenLDAP than the latest image. The
+  weekly rebuild skips, and a manual release fails unless `allow_downgrade` is
+  set. Symas withdrew its 2.6.15 packages, so main pins 2.6.13 until 2.6.16.
 
 ### Added
 - Line coverage of `entrypoint.sh` and `reload-tls.sh` with kcov. The new
