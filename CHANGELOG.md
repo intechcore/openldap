@@ -5,6 +5,15 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
 
+### Changed
+- Release notes summarize the release for people instead of listing the
+  commits. They start with the rebuild reason or the OpenLDAP update, then the
+  CHANGELOG entries added since the previous release, then a table of
+  OpenLDAP, the Symas packages and the base image. The commits follow in a
+  collapsed block. `.github/scripts/release-notes.sh` writes them.
+- The weekly rebuild names each Trivy finding it fixes in the release notes:
+  CVE, package, installed and fixed version.
+
 ### Added
 - Line coverage of `entrypoint.sh` and `reload-tls.sh` with kcov. The new
   `sonar` CI job runs the integration and migration tests against the
