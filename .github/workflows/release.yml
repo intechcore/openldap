@@ -230,6 +230,11 @@ jobs:
           fi
           EXISTING_TAGS=$(gh api "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${GITHUB_REPOSITORY#*/}/versions" \
             --paginate --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
+          # Git tags stay when a package or a release is deleted, so they count
+          # as taken too. A tag never names two images.
+          EXISTING_TAGS="${EXISTING_TAGS}
+          $(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}-" \
+            --jq '.[].ref | sub("^refs/tags/v"; "")')"
           SUFFIX=1
           while echo "$EXISTING_TAGS" | grep -qx "${VERSION}-${SUFFIX}"; do
             SUFFIX=$((SUFFIX + 1))
@@ -295,5 +300,10 @@ jobs:
           cp "$PROVENANCE" "assets/openldap-${TAG}.intoto.jsonl"
           cp builds/build-amd64/sbom.spdx.json "assets/openldap-${TAG}-amd64.spdx.json"
           cp builds/build-arm64/sbom.spdx.json "assets/openldap-${TAG}-arm64.spdx.json"
+          # Never attach a release to an existing tag: gh would reuse its commit.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::tag ${TAG} already exists"
+            exit 1
+          fi
           gh release create "$TAG" assets/* --target "$GITHUB_SHA" --title "$TAG" \
             --notes-file release_notes.md
