@@ -13,6 +13,8 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   than the published one is still never released.
 
 ### Fixed
+- The Rebuild workflow never started since releases are signed: it called the release without
+  the `id-token` and `attestations` permissions the release needs. It grants them now.
 - A release counts the git tags as taken build numbers, next to the package tags, and never
   attaches to an existing tag. A deleted package or release can no longer free a number.
 

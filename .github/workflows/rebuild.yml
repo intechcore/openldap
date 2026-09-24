@@ -169,9 +169,13 @@ jobs:
   release:
     needs: check
     if: needs.check.outputs.rebuild == 'true'
+    # A called workflow gets at most these permissions. The release signs the
+    # image and the SBOMs, so it needs id-token and attestations too.
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
     uses: ./.github/workflows/release.yml
     with:
       reason: ${{ needs.check.outputs.reason }}
