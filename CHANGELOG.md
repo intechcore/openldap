@@ -5,6 +5,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
 
+### Fixed
+- A release counts the git tags as taken build numbers, next to the package tags, and never
+  attaches to an existing tag. A deleted package or release can no longer free a number.
+
 ### Changed
 - Release notes summarize the release for people instead of listing the
   commits. They start with the rebuild reason or the OpenLDAP update, then the
