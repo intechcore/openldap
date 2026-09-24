@@ -9,27 +9,34 @@ make build            # build the image
 make test             # build and run the integration tests
 make test-migration   # 2.4 to 2.6 migration test
 make test-arch        # arm64 smoke test under emulation
-make lint             # shellcheck + hadolint
+make coverage         # line coverage of entrypoint.sh and reload-tls.sh
+make lint             # contract + shellcheck + hadolint
 ```
 
-CI runs the same tests on amd64 and arm64 for every pull request, together with ShellCheck,
-Hadolint, actionlint, zizmor, `trivy config` and a Trivy scan of the image.
+CI runs for every pull request: ShellCheck, Hadolint, actionlint, zizmor, the configuration
+contract and `trivy config`, the integration tests on amd64 and arm64, the coverage run with the
+SonarCloud analysis, and a Trivy scan of the image.
 
 ## Pull requests
 
-1. Keep one change per pull request, with tests where it changes behavior.
-2. Write commit messages as [Conventional Commits](https://www.conventionalcommits.org/):
-   `fix: ...`, `feat: ...`, `ci: ...`, `docs: ...`.
-3. Sign your commits. The default branch accepts verified signatures only.
-4. Update the README and the CHANGELOG with the change. Write the CHANGELOG entry for users:
-   the release notes quote it.
+1. Branch from the default branch as `type/description`, for example `fix/empty-title`.
+2. Keep one change per pull request. New behavior comes with tests; a bug fix adds a test that
+   fails without it.
+3. Write commit messages as [Conventional Commits](https://www.conventionalcommits.org/) without a
+   scope: `feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`, `test: ...`, `build: ...`,
+   `ci: ...`, `chore: ...`.
+4. Sign your commits. The default branch accepts verified signatures only.
+5. Add an entry under `## [Unreleased]` in `CHANGELOG.md`, written for users: the release notes
+   quote it. Update the README when behavior or configuration changes.
 
-Pull requests are squash-merged once CI is green.
+Pull requests are squash-merged once all required checks are green.
 
-## Release notes
+## Releases
 
-The Release workflow writes the notes with `.github/scripts/release-notes.sh`. They take the
-entries of `## [Unreleased]` in `CHANGELOG.md` that were added since the previous release, and
-the reason of an automatic release. To give a release its own heading, cut a
-`## [<tag>] - <date>` section in the pull request that changes the image (a merge releases it),
-for example `## [2.6.13-4]`. The notes then take that section.
+Releases are automatic when an input changes. The notes take the Unreleased entries added since
+the previous release, see `.github/scripts/release-notes.sh`.
+
+## Changelog
+
+1. Keep one `## [Unreleased]` section on top, and add every entry there.
+2. Do not cut per-release sections. The release notes pick the new entries by themselves.

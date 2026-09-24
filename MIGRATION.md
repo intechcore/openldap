@@ -19,7 +19,7 @@ The variables you already use are supported as-is:
 | `LDAP_TLS`, `LDAP_TLS_*` | ✅ | |
 | `LDAP_TLS_VERIFY_CLIENT` | ✅ | |
 | `LDAP_LOG_LEVEL` | ✅ | |
-| `LDAP_RFC2307BIS_SCHEMA` | ⚠️ | not auto-handled — load via `/schema` if needed |
+| `LDAP_RFC2307BIS_SCHEMA` | ⚠️ | not auto-handled, load via `/schema` if needed |
 
 Certificates: osixia mounted them at
 `/container/service/slapd/assets/certs`. This image uses `/container/certs`.
@@ -37,12 +37,12 @@ which lets OpenLDAP 2.6 write the mdb in its current format.
 docker exec openldap slapcat -o ldif-wrap=no -b "dc=example,dc=org" > dump.ldif
 ```
 
-The `cn=config` from 2.4 is **not** reused — the new image regenerates config
+The `cn=config` from 2.4 is **not** reused. The new image regenerates config
 from the env vars (and overlays from `/overlays`, see step 2).
 
 The new image applies `/bootstrap` LDIF with `ldapadd`, which **rejects
 operational / `NO-USER-MODIFICATION` attributes** that `slapcat` emits. Strip
-them before reimport — note `memberOf`, which the old osixia server's memberof
+them before reimport. Note `memberOf`, which the old osixia server's memberof
 overlay computed onto every user entry. Membership really lives in the group
 entries' `member`/`uniqueMember`, and this image runs the memberof overlay by
 default (`LDAP_MEMBEROF`), so `memberOf` is recomputed automatically after the
@@ -66,7 +66,7 @@ cp data.ldif ./bootstrap/00-data.ldif
 
 If your old server ran the **ppolicy** overlay (password policy / account
 lockout), re-enable it on the new server by dropping its `cn=config` LDIF into
-`./overlays` (mounted at `/overlays`) — overlays are applied on first boot
+`./overlays` (mounted at `/overlays`). Overlays are applied on first boot
 before the data. The data backend is `olcDatabase={1}mdb,cn=config`:
 
 ```ldif
@@ -87,7 +87,7 @@ olcPPolicyHashCleartext: TRUE
 
 Point the compose service at fresh `*-data` / `*-config` volumes and start it.
 On first boot the entrypoint creates the base tree and applies everything in
-`/bootstrap` (idempotent — existing entries are skipped). If your dump already
+`/bootstrap` (idempotent, existing entries are skipped). If your dump already
 contains the base entry and OUs, that is fine; duplicates are ignored.
 
 ### 3. Verify

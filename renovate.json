@@ -50,11 +50,21 @@
       ],
       "depNameTemplate": "ghcr.io/intechcore/openldap",
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Tool versions in workflow inputs, below a renovate comment, for example the ShellCheck version of ludeeus/action-shellcheck",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+[a-z0-9_-]+: (?<currentValue>[^\\s@]+)\\n"
+      ]
     }
   ],
   "packageRules": [
     {
-      "description": "Group both OpenLDAP pins into one PR; not automerged — the build must pass with the new Symas version, and `make bump-openldap` keeps the two pins in sync.",
+      "description": "Group both OpenLDAP pins into one PR; not automerged. The build must pass with the new Symas version, and `make bump-openldap` keeps the two pins in sync.",
       "matchPackageNames": [
         "symas-openldap-server"
       ],
@@ -67,12 +77,6 @@
         "symas-openldap-server"
       ],
       "allowedVersions": "/^2\\.6\\./"
-    },
-    {
-      "description": "debian:trixie-slim is pinned by digest. Renovate updates the digest when Debian rebuilds the image under the same tag, and the weekly Rebuild then releases it. The codename tag itself stays.",
-      "matchDatasources": ["docker"],
-      "matchDepNames": ["debian"],
-      "pinDigests": true
     },
     {
       "description": "Own image on ghcr.io. Every release publishes the exact build tag (2.6.15-2) next to the moving tag (2.6.15) and latest. Regex versioning tracks only the exact one and orders by the build number. Docker versioning would read -N as a compatibility tag and hide rebuilds.",

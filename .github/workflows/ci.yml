@@ -12,9 +12,15 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older run. Runs on main finish.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,6 +31,8 @@ jobs:
         with:
           scandir: .
           severity: warning
+          # renovate: datasource=github-releases depName=koalaman/shellcheck
+          version: v0.11.0
 
       - name: Hadolint
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
@@ -61,6 +69,7 @@ jobs:
   test:
     name: test (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +103,7 @@ jobs:
   # stage of the Dockerfile, which traces both scripts with kcov.
   sonar:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -141,6 +151,7 @@ jobs:
   # because Debian released a fix. The weekly rebuild picks the fix up.
   trivy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       issues: write
@@ -168,77 +179,10 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
-      - name: Summarize findings
-        id: scan
-        run: |
-          crit=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json)
-          high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json)
-          {
-            echo "critical=$crit"
-            echo "high=$high"
-            echo "total=$((crit + high))"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "| Package | CVE | Severity | Installed | Fixed |"
-            echo "|---|---|---|---|---|"
-            jq -r '.Results[]? | .Vulnerabilities[]? |
-              "| \(.PkgName) | [\(.VulnerabilityID)](\(.PrimaryURL)) | \(.Severity) | \(.InstalledVersion) | \(.FixedVersion // "-") |"' \
-              trivy-results.json
-          } > findings.md
-          echo "## Trivy image scan: ${crit} CRITICAL, ${high} HIGH (fixable)" >> "$GITHUB_STEP_SUMMARY"
-          if [ $((crit + high)) -gt 0 ]; then
-            cat findings.md >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No fixable CRITICAL or HIGH vulnerabilities." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      # Push events only: pull requests from forks get a read-only token.
-      - name: Report to the tracking issue
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CRITICAL: ${{ steps.scan.outputs.critical }}
-          HIGH: ${{ steps.scan.outputs.high }}
-          TOTAL: ${{ steps.scan.outputs.total }}
-        run: |
-          # One tracking issue for the image.
-          title="🛡️ Trivy: unresolved image vulnerabilities"
-          label="security"
-          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
-          gh label create "$label" --color B60205 \
-            --description "Automated Trivy scan findings" 2>/dev/null || true
-          existing=$(gh issue list --state open --label "$label" --json number,title |
-            jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty')
-
-          if [ "$TOTAL" -eq 0 ]; then
-            if [ -n "$existing" ]; then
-              gh issue comment "$existing" --body "Scan on \`${GITHUB_SHA:0:7}\` is clean. Closing."
-              gh issue close "$existing"
-            fi
-            exit 0
-          fi
-
-          {
-            echo "Trivy found **${CRITICAL} CRITICAL** and **${HIGH} HIGH** fixable vulnerabilities."
-            echo ""
-            echo "Commit: \`${GITHUB_SHA:0:7}\`, [workflow run](${run_url})"
-            echo ""
-            cat findings.md
-            echo ""
-            echo "_CRITICAL fails the build, HIGH is reported here. The weekly rebuild picks up fixes._"
-          } > issue-body.md
-
-          if [ -n "$existing" ]; then
-            gh issue edit "$existing" --body-file issue-body.md
-          else
-            gh issue create --title "$title" --label "$label" --body-file issue-body.md
-          fi
-
-      - name: Fail on CRITICAL
-        if: steps.scan.outputs.critical != '0'
-        env:
-          CRITICAL: ${{ steps.scan.outputs.critical }}
-        run: |
-          echo "::error::Trivy found ${CRITICAL} fixable CRITICAL vulnerabilities"
-          exit 1
+      # Summary, tracking issue on push, and failure on CRITICAL. The same
+      # action lives in each intechcore image repository.
+      - name: Report the findings
+        uses: ./.github/actions/trivy-report
+        with:
+          report: ${{ github.event_name == 'push' }}
+          token: ${{ github.token }}

@@ -6,10 +6,10 @@ Guidance for working in this repo.
 
 A self-maintained OpenLDAP 2.6 LTS Docker image, built from the official Symas
 OpenLDAP 2.6 LTS apt packages on Debian 13. Replaces the abandoned
-`osixia/openldap`. Same repo conventions as `intechcore/nginx-geoip` and
+`osixia/openldap`. Same repo conventions as `intechcore/nginx-geoip2` and
 `intechcore/subversion-ldap-httpd`.
 
-Resilience: not locked into Symas — OpenLDAP source is canonical at openldap.org,
+Resilience: not locked into Symas. OpenLDAP source is canonical at openldap.org,
 and the previous from-source build (compile a pinned tarball + SHA256) lives in
 git history (`90ab985:Dockerfile`). If `repo.symas.com` disappears, restore that
 Dockerfile (or vendor the pinned `.deb`s, or fall back to Debian's `slapd`).
@@ -23,16 +23,16 @@ See the "Where the binaries come from" section in README.md.
   Stage `coverage` (CI only) runs both scripts under kcov, see Coverage below.
   The last stage, `FROM image` plus the build metadata labels, is the published
   image: the release builds the default target, so keep it last.
-- `entrypoint.sh` — hybrid bootstrap. Env vars (osixia-compatible) drive
+- `entrypoint.sh`: hybrid bootstrap. Env vars (osixia-compatible) drive
   first-boot config; `/schema`, `/overlays` (cn=config overlay LDIF, applied via
   ldapmodify) and `/bootstrap` LDIF cover the rest. Idempotent across restarts
   (only bootstraps when the config volume is empty). Also hosts the opt-in TLS
   cert watcher (`LDAP_TLS_WATCH`).
-- `reload-tls.sh` → `/usr/local/bin/reload-tls` — re-reads slapd's TLS material
+- `reload-tls.sh` → `/usr/local/bin/reload-tls` re-reads slapd's TLS material
   without a restart by re-asserting `olcTLS*` in `cn=config` (for renewals).
-- `schema/` — custom schemas baked into the image at `/schema`.
-- `examples/letsencrypt/` — certbot DNS-01 sidecar + auto-reload reference.
-- `tests/integration/` — `test-integration.sh` (smoke + e2e: full ACL matrix,
+- `schema/`: custom schemas baked into the image at `/schema`.
+- `examples/letsencrypt/`: certbot DNS-01 sidecar + auto-reload reference.
+- `tests/integration/`: `test-integration.sh` (smoke + e2e: full ACL matrix,
   bootstrap, custom schema, TLS/reload/mutual-TLS/cipher, ppolicy incl. expiry,
   CRUD, memberof/refint, the `lastbind`/`unique`/`password-hash`/`rfc2307bis`
   toggles, and a slapcat→slapadd backup round-trip) and
@@ -44,11 +44,12 @@ See the "Where the binaries come from" section in README.md.
   checks that every variable of the README Configuration table appears in a
   test under `tests/`; `tests/contract-allowlist.txt` exempts variables CI
   cannot test, one per line with a reason.
-- `.github/workflows/` — `ci.yml` (lint with shellcheck, hadolint, actionlint,
+- `.github/workflows/`: `ci.yml` (lint with shellcheck, hadolint, actionlint,
   zizmor, the configuration contract and trivy config; integration tests on
   amd64 and arm64, the 2.4→2.6 migration on amd64; `sonar`: coverage run and
   SonarCloud scan, skipped without `SONAR_TOKEN`; Trivy: CRITICAL fails, HIGH
-  goes to a tracking issue),
+  goes to a tracking issue, through the local action
+  `.github/actions/trivy-report`, kept identical in the three image repos),
   release, and `rebuild.yml`, which releases automatically, weekly and on a push
   that changes an image input: a newer pinned OpenLDAP, a new base digest, a
   changed input file since the image revision, or fixable CRITICAL/HIGH
@@ -100,7 +101,7 @@ See the "Where the binaries come from" section in README.md.
   default `mail uid`) rejects duplicate values (one `olcUniqueURI:
   ldap:///?<attr>?sub?` per attribute, enforced even for rootdn writes).
 - `LDAP_PASSWORD_HASH` (default `{SSHA}`) sets `olcPasswordHash` via the slapd.conf
-  `password-hash` directive (slaptest puts it on the frontend db — NOT the global
+  `password-hash` directive (slaptest puts it on the frontend db, NOT the global
   cn=config entry, which breaks startup for module-provided schemes). The
   entrypoint loads the needed module (argon2/pw-pbkdf2/pw-sha2/pw-apr1).
 - `LDAP_RFC2307BIS` swaps the `nis` schema include for `rfc2307bis` (same OIDs, so
@@ -119,7 +120,7 @@ See the "Where the binaries come from" section in README.md.
   verification). The pw-reader's read clause is injected into the generated ACLs
   via the `$pw_read` shell var in `bootstrap_config`.
 - Data: `/var/lib/ldap`; config: `/etc/ldap/slapd.d` (osixia-compatible paths).
-- slapd runs as the `openldap` user (created in the Dockerfile — the Symas
+- slapd runs as the `openldap` user (created in the Dockerfile; the Symas
   packages don't add it); the entrypoint starts as root to set up.
 - Local admin access uses rootdn binds over `ldapi://` (`cn=admin,cn=config`
   and `cn=admin,<base>`), not SASL EXTERNAL.
@@ -134,7 +135,7 @@ See the "Where the binaries come from" section in README.md.
   is derived from the same package via `extractVersion`, both grouped into one
   non-automerged "openldap version" PR (2.6 line only). `make bump-openldap
   V=<version>` does the same resolution manually. (The old `endoflife.date`
-  datasource was dropped — endoflife no longer tracks openldap.)
+  datasource was dropped: endoflife no longer tracks openldap.)
 - Point-release upgrades (2.6.x→2.6.y) are safe in place (mdb format stable); the
   data volume is reused, no slapcat/slapadd. See README "Upgrading".
 - `TZ` sets the timezone (entrypoint symlinks `/etc/localtime`); `LANG` selects

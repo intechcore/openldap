@@ -39,6 +39,7 @@ jobs:
   # Resolves the base image once, so both architectures record the same digest.
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: read
@@ -90,6 +91,7 @@ jobs:
     name: build (${{ matrix.arch }})
     needs: prepare
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -195,6 +197,7 @@ jobs:
   publish:
     needs: [prepare, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       packages: write
@@ -229,8 +232,10 @@ jobs:
             echo "::error::amd64 and arm64 report different versions"
             exit 1
           fi
+          # Each call on its own line, so a failed request fails the step: a
+          # registry error must never look like a free build number.
           EXISTING_TAGS=$(gh api "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${GITHUB_REPOSITORY#*/}/versions" \
-            --paginate --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
+            --paginate --jq '.[].metadata.container.tags[]')
           # Git tags stay when a package or a release is deleted, so they count
           # as taken too. A tag never names two images.
           EXISTING_TAGS="${EXISTING_TAGS}
@@ -253,7 +258,6 @@ jobs:
           TAG: ${{ steps.version.outputs.image_tag }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # shellcheck disable=SC2046 # the conditional tag is empty or two words
           docker buildx imagetools create \
             -t "${IMAGE}:${TAG}" \
             -t "${IMAGE}:${VERSION}" \

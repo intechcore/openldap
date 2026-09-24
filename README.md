@@ -11,7 +11,7 @@
 Self-maintained OpenLDAP **2.6 LTS** directory server, built from the official
 [Symas](https://www.symas.com/symas-openldap-packages) OpenLDAP 2.6 LTS packages
 on Debian 13 (trixie). Symas maintains OpenLDAP upstream, so these are
-authoritative binaries — and using prebuilt packages keeps multi-arch builds
+authoritative binaries, and using prebuilt packages keeps multi-arch builds
 fast (no QEMU cross-compile).
 
 Drop-in replacement for the abandoned `osixia/openldap` image: the same
@@ -53,7 +53,7 @@ volumes:
 
 ## Features
 
-- OpenLDAP 2.6.13 (LTS) from official Symas packages — version decoupled from Debian's `slapd`
+- OpenLDAP 2.6.13 (LTS) from official Symas packages, version decoupled from Debian's `slapd`
 - `cn=config` (dynamic) backend, `mdb` data store
 - First-boot bootstrap driven by environment variables (osixia-compatible)
 - Custom schema loading from `/schema` (`*.schema` and `*.ldif`); `openssh-lpk`
@@ -109,16 +109,16 @@ starts reuse the persisted `cn=config`.
 
 Mount certificates into `/container/certs` (filenames configurable via the
 variables above). If `LDAP_TLS=true` and no certificate is found, a self-signed
-cert is generated at startup — convenient for dev/CI, **not** for production.
+cert is generated at startup: convenient for dev/CI, **not** for production.
 
 #### Renewals / Let's Encrypt
 
 slapd reads its TLS material once at startup and does not watch the files. Two
 ways to apply a renewed certificate without recreating the container:
 
-- **`reload-tls`** — run `docker exec <container> reload-tls` (e.g. from a
+- **`reload-tls`**: run `docker exec <container> reload-tls` (e.g. from a
   certbot deploy hook). It tells the running slapd to re-read its cert files.
-- **`LDAP_TLS_WATCH=true`** — the image polls the cert file every
+- **`LDAP_TLS_WATCH=true`**: the image polls the cert file every
   `LDAP_TLS_WATCH_INTERVAL` seconds and reloads automatically when it changes,
   so any external renewer just has to rewrite the mounted cert.
 
@@ -138,11 +138,11 @@ the time of each successful bind in the operational `authTimestamp` attribute (a
 
 Set `LDAP_UNIQUE=true` to enable the **unique** overlay, which rejects writes
 that would duplicate a value of the attributes in `LDAP_UNIQUE_ATTRIBUTES`
-(default `mail uid`) — e.g. two accounts can't share an email address.
+(default `mail uid`), e.g. two accounts can't share an email address.
 
 Drop additional `cn=config` LDIF files into `/overlays` to enable more overlays
 on first boot (applied before the data load). The data backend is
-`olcDatabase={1}mdb,cn=config`. Example — the **ppolicy** password-policy overlay:
+`olcDatabase={1}mdb,cn=config`. Example, the **ppolicy** password-policy overlay:
 
 ```ldif
 # /overlays/10-ppolicy.ldif
@@ -164,15 +164,15 @@ olcPPolicyHashCleartext: TRUE
 
 The default ACLs match osixia's restrictive model:
 
-- `userPassword` — self can change it, anonymous may use it to authenticate
+- `userPassword`: self can change it, anonymous may use it to authenticate
   (bind), nobody can read the hash.
-- Everything else — a user reads **only its own entry**; the optional readonly
+- Everything else: a user reads **only its own entry**; the optional readonly
   account (`LDAP_READONLY_USER`) reads the whole tree; everyone else is denied.
 
 Two read-only service accounts are available: `LDAP_READONLY_USER` reads all
 entries but **never** the password hashes (the right choice for services that
 authenticate via an LDAP bind), while `LDAP_READONLY_PW_USER` additionally reads
-`userPassword` — only for services that verify passwords by reading the hash
+`userPassword`, only for services that verify passwords by reading the hash
 locally (e.g. some Dovecot/Postfix setups). Both are read-only (no writes).
 
 The `cn=admin,<base>` rootdn bypasses ACLs for administration. Tighten or widen
@@ -294,14 +294,14 @@ The image installs the official **Symas** OpenLDAP 2.6 LTS packages (Symas
 employs the OpenLDAP core team and is the project's commercial steward). We are
 **not locked in**, because OpenLDAP itself is open source:
 
-- **Canonical source** — [openldap.org](https://www.openldap.org/software/download/)
+- **Canonical source**: [openldap.org](https://www.openldap.org/software/download/)
   (mirrored). The pinned version + a tarball SHA256 are all that's needed to
   build from scratch.
-- **From-source fallback** — the previous build compiled OpenLDAP from that
+- **From-source fallback**: the previous build compiled OpenLDAP from that
   source on Debian; it is preserved in git history and can be restored if
-  `repo.symas.com` ever goes away. (Trade-off: slower multi-arch builds — the
+  `repo.symas.com` ever goes away. (Trade-off: slower multi-arch builds, the
   reason we moved to prebuilt packages.)
-- **Other options** — Debian's own `slapd` package (lags upstream), or the LTB
+- **Other options**: Debian's own `slapd` package (lags upstream), or the LTB
   project's builds (RPM only). RHEL no longer ships an OpenLDAP server.
 
 For maximum durability you can also vendor the exact pinned `.deb` files
@@ -313,13 +313,17 @@ Symas repo.
 Within the 2.6 LTS line (e.g. `2.6.13` → `2.6.14`, the bumps Renovate proposes),
 the mdb on-disk format is stable, so upgrading is **in place**: pull the new
 image and recreate the container against the existing `*-data` / `*-config`
-volumes — no `slapcat`/`slapadd` dump-and-reload needed. Snapshot the volumes
-first (the `restic` backup). Major upgrades from 2.4/2.5 are a different story —
+volumes, no `slapcat`/`slapadd` dump-and-reload needed. Snapshot the volumes
+first (the `restic` backup). Major upgrades from 2.4/2.5 are a different story,
 see [MIGRATION.md](MIGRATION.md).
 
 ## Migrating from osixia/openldap
 
 See [MIGRATION.md](MIGRATION.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately, see [SECURITY.md](SECURITY.md).
 
 ## Disclaimer
 
@@ -328,10 +332,6 @@ Use it at your own risk. Intechcore GmbH is not liable for damage from its use, 
 allows. It is published free of charge, outside of any commercial offering, with no obligation to
 support it. Security reports are welcome, see [SECURITY.md](SECURITY.md).
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately, see [SECURITY.md](SECURITY.md).
-
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
