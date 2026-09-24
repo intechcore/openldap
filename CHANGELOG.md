@@ -100,3 +100,6 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   trixie repository on 2026-09-17, so `2.6.15-1trixie1` no longer installs.
 - Base image `debian:stable-slim` → `debian:trixie-slim`, so an automatic
   rebuild never moves to the next Debian release.
+- Renovate takes its common rules from the shared preset
+  `github>intechcore/renovate-config`, which also turns on OSV vulnerability
+  alerts.
