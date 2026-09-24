@@ -242,7 +242,8 @@ variable, list it in `tests/contract-allowlist.txt` with a reason.
 
 ## Releasing
 
-Run the **Release** workflow (`workflow_dispatch`). It builds and tests amd64
+Releases are automatic, see [Automatic Releases](#automatic-releases). To
+release by hand, run the **Release** workflow (`workflow_dispatch`). It builds and tests amd64
 and arm64 on separate jobs, pushes exactly the tested images, derives
 the version from `slapd -VV`, and pushes multi-arch tags
 `<version>-<n>`, `<version>`, and `latest` to `ghcr.io/intechcore/openldap`.
@@ -270,16 +271,20 @@ gh attestation verify oci://ghcr.io/intechcore/openldap@sha256:<platform digest>
   --owner intechcore --predicate-type https://spdx.dev/Document/v2.3
 ```
 
-### Automatic Rebuilds
+### Automatic Releases
 
-The image builds on `debian:trixie-slim` and installs its packages with apt. Debian ships security fixes as package updates and rebuilds the base image under the same tag. Renovate sees neither.
+Every input change on `main` releases by itself. Renovate proposes a new Symas OpenLDAP package and a new digest of `debian:trixie-slim`. Debian also ships security fixes as package updates, which change no file in git.
 
-The `Rebuild` workflow checks the published `latest` image every Monday. It releases the next build (`2.6.13-4 → 2.6.13-5`) in two cases:
+The `Rebuild` workflow checks the published `latest` image. It runs every Monday, and on each push to `main` that changes `Dockerfile`, `entrypoint.sh`, `reload-tls.sh` or `schema/`. It releases the next build (`2.6.13-4 → 2.6.13-5`, the first build of a new OpenLDAP gets `-1`) in these cases:
 
-- The upstream base image digest differs from the `org.opencontainers.image.base.digest` label of the published image.
+- The Dockerfile pins a newer OpenLDAP than the `org.opencontainers.image.version` label of the published image. A merged Renovate update releases without a manual step.
+- The base image digest pinned in `FROM` differs from the `org.opencontainers.image.base.digest` label of the published image.
 - Trivy finds fixable CRITICAL or HIGH vulnerabilities in the published image.
+- A file that goes into the image changed since the commit in the `org.opencontainers.image.revision` label of the published image.
 
-A rebuild runs without the layer cache, so apt installs current packages. The release notes state the reason, with the CVE, package and fixed version of each Trivy finding. The rebuild releases the current `main`, so merged changes go out with it.
+It never releases an OpenLDAP lower than the published one. One check and release runs at a time, so a burst of pushes never publishes the same change twice.
+
+A rebuild runs without the layer cache, so apt installs current packages. The release notes state the reason, with the CVE, package and fixed version of each Trivy finding. A release takes the current `main`, so merged changes go out with it.
 
 The base stays on the Debian 13 codename on purpose. `stable-slim` moves to the next Debian release without notice. Move to Debian 14 by changing `FROM`.
 

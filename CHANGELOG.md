@@ -5,7 +5,16 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
 
+### Changed
+- Releases are automatic. The Rebuild workflow also runs on each push to `main` that changes
+  `Dockerfile`, `entrypoint.sh`, `reload-tls.sh` or `schema/`. It releases a newer pinned
+  OpenLDAP, and a change of those files since the commit of the published image. A merged
+  Renovate update of OpenLDAP now reaches the registry without a manual step. A lower OpenLDAP
+  than the published one is still never released.
+
 ### Fixed
+- The Rebuild workflow never started since releases are signed: it called the release without
+  the `id-token` and `attestations` permissions the release needs. It grants them now.
 - A release counts the git tags as taken build numbers, next to the package tags, and never
   attaches to an existing tag. A deleted package or release can no longer free a number.
 

@@ -30,6 +30,6 @@ Pull requests are squash-merged once CI is green.
 
 The Release workflow writes the notes with `.github/scripts/release-notes.sh`. They take the
 entries of `## [Unreleased]` in `CHANGELOG.md` that were added since the previous release, and
-the reason of a weekly rebuild. To give a release its own heading, cut a
-`## [<tag>] - <date>` section before you run the workflow, for example `## [2.6.13-4]`. The
-notes then take that section.
+the reason of an automatic release. To give a release its own heading, cut a
+`## [<tag>] - <date>` section in the pull request that changes the image (a merge releases it),
+for example `## [2.6.13-4]`. The notes then take that section.

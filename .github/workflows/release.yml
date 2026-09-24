@@ -12,7 +12,8 @@ on:
         description: Publish an OpenLDAP version lower than the latest release
         type: boolean
         default: false
-  # Called by rebuild.yml when the base image or its packages changed.
+  # Called by rebuild.yml when an input of the image changed: the OpenLDAP
+  # version, the base image, its packages or a file.
   workflow_call:
     inputs:
       reason:
