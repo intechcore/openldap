@@ -50,16 +50,6 @@
       ],
       "depNameTemplate": "ghcr.io/intechcore/openldap",
       "datasourceTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Tool versions in workflow inputs, below a renovate comment, for example the ShellCheck version of ludeeus/action-shellcheck",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+[a-z0-9_-]+: (?<currentValue>[^\\s@]+)\\n"
-      ]
     }
   ],
   "packageRules": [
