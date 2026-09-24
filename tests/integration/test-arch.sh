@@ -50,7 +50,7 @@ fi
 echo "[2/$TOTAL] Binaries are the target architecture and slapd is 2.6.x"
 ARCH=$(docker run --rm --platform "$PLATFORM" --entrypoint "" "$TAG" uname -m 2>/dev/null || true)
 VER=$(docker run --rm --platform "$PLATFORM" --entrypoint "" "$TAG" sh -c 'slapd -VV 2>&1' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-if { [ -z "$WANT_ARCH" ] || [ "$ARCH" = "$WANT_ARCH" ]; } && echo "$VER" | grep -q '^2\.6\.'; then
+if { [[ -z "$WANT_ARCH" ]] || [[ "$ARCH" = "$WANT_ARCH" ]]; } && echo "$VER" | grep -q '^2\.6\.'; then
     pass "arch=$ARCH, slapd $VER"
 else
     fail "wrong arch/version (arch=$ARCH want=$WANT_ARCH ver=$VER)"
@@ -91,4 +91,4 @@ fi
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
-[ "$FAIL" -gt 0 ] && exit 1 || exit 0
+[[ "$FAIL" -gt 0 ]] && exit 1 || exit 0

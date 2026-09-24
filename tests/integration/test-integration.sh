@@ -84,7 +84,7 @@ fi
 
 echo "[2/$TOTAL] slapd present and is OpenLDAP 2.6.x"
 SLAPD_VER=$(docker run --rm --entrypoint "" "$IMAGE" sh -c 'slapd -VV 2>&1' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-if [ -n "$SLAPD_VER" ] && echo "$SLAPD_VER" | grep -q '^2\.6\.'; then
+if [[ -n "$SLAPD_VER" ]] && echo "$SLAPD_VER" | grep -q '^2\.6\.'; then
     pass "slapd $SLAPD_VER"
 else
     fail "unexpected slapd version: '${SLAPD_VER:-none}'"
@@ -99,7 +99,7 @@ fi
 
 echo "[4/$TOTAL] HEALTHCHECK instruction present"
 HC=$(docker inspect --format='{{.Config.Healthcheck}}' "$IMAGE" 2>/dev/null || echo "")
-if [ -n "$HC" ] && [ "$HC" != "<nil>" ]; then
+if [[ -n "$HC" ]] && [[ "$HC" != "<nil>" ]]; then
     pass "HEALTHCHECK is defined"
 else
     fail "HEALTHCHECK not found in image"
@@ -143,7 +143,7 @@ fi
 
 echo "[8/$TOTAL] Admin can read the subtree"
 COUNT=$(dsearch -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "$BASE" dn 2>/dev/null | grep -c "^dn:" || true)
-if [ "${COUNT:-0}" -ge 3 ]; then
+if [[ "${COUNT:-0}" -ge 3 ]]; then
     pass "admin search returned $COUNT entries"
 else
     fail "admin search returned only ${COUNT:-0} entries"
@@ -234,7 +234,7 @@ docker exec "$CONTAINER" sh -c '
     chown openldap:openldap /etc/ldap/certs/ldap.crt /etc/ldap/certs/ldap.key /etc/ldap/certs/ca.crt' >/dev/null 2>&1
 docker exec "$CONTAINER" reload-tls >/dev/null 2>&1 || true
 SUBJ_AFTER=$(served_subject)
-if echo "$SUBJ_AFTER" | grep -q "CN=renewed.example.test" && [ "$SUBJ_BEFORE" != "$SUBJ_AFTER" ]; then
+if echo "$SUBJ_AFTER" | grep -q "CN=renewed.example.test" && [[ "$SUBJ_BEFORE" != "$SUBJ_AFTER" ]]; then
     pass "renewed cert served after reload-tls (no restart)"
 else
     fail "cert not reloaded (before='$SUBJ_BEFORE' after='$SUBJ_AFTER')"
@@ -259,7 +259,7 @@ fi
 echo "[18/$TOTAL] realistic dataset loaded (inetOrgPerson + groupOfUniqueNames)"
 NPEOPLE=$(dsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(objectClass=inetOrgPerson)" dn 2>/dev/null | grep -c '^dn:')
 NMEMB=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=everyone,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -c '^uniqueMember:')
-if [ "${NPEOPLE:-0}" -ge 11 ] && [ "${NMEMB:-0}" -ge 11 ]; then
+if [[ "${NPEOPLE:-0}" -ge 11 ]] && [[ "${NMEMB:-0}" -ge 11 ]]; then
     pass "people=$NPEOPLE, group 'everyone' members=$NMEMB"
 else
     fail "dataset incomplete (people=$NPEOPLE, members=$NMEMB)"
@@ -383,7 +383,7 @@ fi
 echo "[29/$TOTAL] TLS hardening: protocol floor configured + TLS 1.2 works"
 PMIN=$(ccfg -b cn=config -s base olcTLSProtocolMin | sed -n 's/^olcTLSProtocolMin: //p')
 T12=$(docker exec "$CONTAINER" sh -c 'echo | openssl s_client -connect 127.0.0.1:636 -tls1_2 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
-if [ -n "$PMIN" ] && [ "$PMIN" != "0.0" ] && [ -n "$T12" ]; then
+if [[ -n "$PMIN" ]] && [[ "$PMIN" != "0.0" ]] && [[ -n "$T12" ]]; then
     pass "olcTLSProtocolMin=$PMIN and TLS 1.2 handshake works"
 else
     fail "TLS floor not enforced (min='$PMIN' tls1.2_cert='$T12')"
@@ -395,7 +395,7 @@ fi
 # see under ou=people. "" DN = anonymous.
 people_seen() {
     bind=""
-    [ -n "$1" ] && bind="-D $1 -w $2"
+    [[ -n "$1" ]] && bind="-D $1 -w $2"
     # shellcheck disable=SC2086
     docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" $bind \
         -b "ou=people,$BASE" "(objectClass=inetOrgPerson)" dn 2>/dev/null | grep -c '^dn:' || true
@@ -408,7 +408,7 @@ canread_pw() {
 ADMIN_SEES=$(people_seen "$ADMIN_DN" "$ADMIN_PW")
 
 echo "[30/$TOTAL] admin (rootdn) reads every user entry"
-if [ "${ADMIN_SEES:-0}" -ge 9 ]; then
+if [[ "${ADMIN_SEES:-0}" -ge 9 ]]; then
     pass "admin sees all $ADMIN_SEES users"
 else
     fail "admin should see the whole directory (saw $ADMIN_SEES)"
@@ -416,7 +416,7 @@ fi
 
 echo "[31/$TOTAL] readonly service account (non-admin) reads all users"
 RO_SEES=$(people_seen "$RO_DN" "$RO_PW")
-if [ "${RO_SEES:-0}" = "${ADMIN_SEES:-0}" ] && [ "${RO_SEES:-0}" -ge 9 ]; then
+if [[ "${RO_SEES:-0}" = "${ADMIN_SEES:-0}" ]] && [[ "${RO_SEES:-0}" -ge 9 ]]; then
     pass "readonly sees all $RO_SEES users (same as admin)"
 else
     fail "readonly should read all users (saw $RO_SEES vs admin $ADMIN_SEES)"
@@ -428,7 +428,7 @@ echo "[32/$TOTAL] a regular user reads its own entry but not another's"
 U_SELF=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=asmith,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
 U_OTHER=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "cn=asmith,ou=people,$BASE" -w "$USER_PW" -b "cn=bjones,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
 U_ENUM=$(people_seen "cn=asmith,ou=people,$BASE" "$USER_PW")
-if [ "${U_SELF:-0}" -ge 1 ] && [ "${U_OTHER:-0}" -eq 0 ] && [ "${U_ENUM:-0}" -eq 0 ]; then
+if [[ "${U_SELF:-0}" -ge 1 ]] && [[ "${U_OTHER:-0}" -eq 0 ]] && [[ "${U_ENUM:-0}" -eq 0 ]]; then
     pass "asmith reads self ($U_SELF), not bjones ($U_OTHER), cannot enumerate ($U_ENUM)"
 else
     fail "self-read-only wrong (self=$U_SELF other=$U_OTHER enum=$U_ENUM)"
@@ -436,7 +436,7 @@ fi
 
 echo "[33/$TOTAL] anonymous reads no user entries"
 ANON_SEES=$(people_seen "" "")
-if [ "${ANON_SEES:-0}" = "0" ]; then
+if [[ "${ANON_SEES:-0}" = "0" ]]; then
     pass "anonymous sees no user entries"
 else
     fail "anonymous should see nothing under ou=people (saw $ANON_SEES)"
@@ -446,7 +446,7 @@ echo "[34/$TOTAL] userPassword is private (admin yes; readonly/other user no)"
 PW_ADMIN=$(canread_pw "$ADMIN_DN" "$ADMIN_PW" asmith)
 PW_RO=$(canread_pw "$RO_DN" "$RO_PW" asmith)
 PW_OTHER=$(canread_pw "cn=bjones,ou=people,$BASE" "$USER_PW" asmith)
-if [ "${PW_ADMIN:-0}" -ge 1 ] && [ "${PW_RO:-0}" -eq 0 ] && [ "${PW_OTHER:-0}" -eq 0 ]; then
+if [[ "${PW_ADMIN:-0}" -ge 1 ]] && [[ "${PW_RO:-0}" -eq 0 ]] && [[ "${PW_OTHER:-0}" -eq 0 ]]; then
     pass "only admin can read userPassword (admin=$PW_ADMIN ro=$PW_RO other=$PW_OTHER)"
 else
     fail "userPassword privacy wrong (admin=$PW_ADMIN ro=$PW_RO other=$PW_OTHER)"
@@ -481,7 +481,7 @@ objectClass: inetOrgPerson
 cn: intruder2
 sn: x
 EOF
-if [ "${RPW_PWREAD:-0}" -ge 1 ] && [ "${RPW_SEES:-0}" = "${ADMIN_SEES:-0}" ] && [ "$RPW_WRITE" = "denied" ]; then
+if [[ "${RPW_PWREAD:-0}" -ge 1 ]] && [[ "${RPW_SEES:-0}" = "${ADMIN_SEES:-0}" ]] && [[ "$RPW_WRITE" = "denied" ]]; then
     pass "readpw reads userPassword ($RPW_PWREAD) and all $RPW_SEES users, write denied"
 else
     fail "readpw wrong (pwRead=$RPW_PWREAD sees=$RPW_SEES vs admin=$ADMIN_SEES write=$RPW_WRITE)"
@@ -509,7 +509,7 @@ fi
 echo "[38/$TOTAL] indexed search: substring and presence filters return matches"
 SUB=$(dsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(cn=a*)" dn 2>/dev/null | grep -c '^dn:' || true)
 PRES=$(dsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(mail=*)" dn 2>/dev/null | grep -c '^dn:' || true)
-if [ "${SUB:-0}" -ge 1 ] && [ "${PRES:-0}" -ge 9 ]; then
+if [[ "${SUB:-0}" -ge 1 ]] && [[ "${PRES:-0}" -ge 9 ]]; then
     pass "substring (cn=a*)=$SUB, presence (mail=*)=$PRES"
 else
     fail "indexed search returned too little (sub=$SUB pres=$PRES)"
@@ -519,7 +519,7 @@ echo "[39/$TOTAL] ModRDN: rename a user and refint updates group references"
 docker exec "$CONTAINER" ldapmodrdn -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" "cn=ijames,ou=people,$BASE" "cn=ijames2" >/dev/null 2>&1
 RN_NEW=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=testers,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -c 'cn=ijames2,' || true)
 RN_OLD=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=testers,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -c 'cn=ijames,' || true)
-if [ "${RN_NEW:-0}" -ge 1 ] && [ "${RN_OLD:-0}" -eq 0 ]; then
+if [[ "${RN_NEW:-0}" -ge 1 ]] && [[ "${RN_OLD:-0}" -eq 0 ]]; then
     pass "rename propagated by refint (testers -> cn=ijames2)"
 else
     fail "refint did not update references on rename (new=$RN_NEW old=$RN_OLD)"
@@ -551,7 +551,7 @@ add: jpegPhoto
 jpegPhoto:: $BLOB
 EOF
 GOT=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=asmith,ou=people,$BASE" jpegPhoto 2>/dev/null | sed -n 's/^jpegPhoto:: //p')
-if [ "$GOT" = "$BLOB" ]; then
+if [[ "$GOT" = "$BLOB" ]]; then
     pass "jpegPhoto stored and read back byte-identical"
 else
     fail "binary round-trip mismatch (got '$GOT')"
@@ -570,10 +570,10 @@ echo "[44/$TOTAL] container HEALTHCHECK reports healthy"
 HS=""
 for _ in $(seq 1 30); do
     HS=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$CONTAINER" 2>/dev/null || true)
-    [ "$HS" = "healthy" ] && break
+    [[ "$HS" = "healthy" ]] && break
     sleep 2
 done
-if [ "$HS" = "healthy" ]; then
+if [[ "$HS" = "healthy" ]]; then
     pass "healthcheck status is healthy"
 else
     fail "healthcheck not healthy (status=$HS)"
@@ -590,7 +590,7 @@ fi
 echo "[46/$TOTAL] slapcat produces a complete LDIF backup"
 # The admin tools default to the Symas config dir, so point -F at our slapd.d.
 SC=$(docker exec "$CONTAINER" slapcat -F /etc/ldap/slapd.d -o ldif-wrap=no -b "$BASE" 2>/dev/null | grep -c '^dn:' || true)
-if [ "${SC:-0}" -ge 9 ]; then
+if [[ "${SC:-0}" -ge 9 ]]; then
     pass "slapcat dumped $SC entries"
 else
     fail "slapcat backup incomplete ($SC entries)"
@@ -611,7 +611,7 @@ for _ in $(seq 1 90); do
 done
 MARK=$(docker exec "$CONTAINER" ldapsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=restartmarker,ou=people,$BASE" -s base cn 2>/dev/null | grep -c '^cn:' || true)
 SKIP=$(docker logs "$CONTAINER" 2>&1 | grep -c "skipping bootstrap" || true)
-if $RST_OK && [ "${MARK:-0}" -ge 1 ] && [ "${SKIP:-0}" -ge 1 ]; then
+if $RST_OK && [[ "${MARK:-0}" -ge 1 ]] && [[ "${SKIP:-0}" -ge 1 ]]; then
     pass "data survived restart and bootstrap was skipped"
 else
     fail "restart behaviour wrong (ready=$RST_OK marker=$MARK skipMsg=$SKIP)"
@@ -688,7 +688,7 @@ echo "[53/$TOTAL] deleting a group removes memberOf from its members"
 GD_BEFORE=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=ggreen,ou=people,$BASE" memberOf 2>/dev/null | grep -c 'cn=developers,' || true)
 docker exec "$CONTAINER" ldapdelete -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" "cn=developers,ou=groups,$BASE" >/dev/null 2>&1
 GD_AFTER=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=ggreen,ou=people,$BASE" memberOf 2>/dev/null | grep -c 'cn=developers,' || true)
-if [ "${GD_BEFORE:-0}" -ge 1 ] && [ "${GD_AFTER:-0}" -eq 0 ]; then
+if [[ "${GD_BEFORE:-0}" -ge 1 ]] && [[ "${GD_AFTER:-0}" -eq 0 ]]; then
     pass "members' memberOf cleaned when the group was deleted"
 else
     fail "memberOf not cleaned on group delete (before=$GD_BEFORE after=$GD_AFTER)"
@@ -703,7 +703,7 @@ delete: uniqueMember
 uniqueMember: cn=hhill,ou=people,$BASE
 EOF
 MR_AFTER=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=hhill,ou=people,$BASE" memberOf 2>/dev/null | grep -c 'cn=everyone,' || true)
-if [ "${MR_BEFORE:-0}" -ge 1 ] && [ "${MR_AFTER:-0}" -eq 0 ]; then
+if [[ "${MR_BEFORE:-0}" -ge 1 ]] && [[ "${MR_AFTER:-0}" -eq 0 ]]; then
     pass "memberof dropped the reverse membership on member removal"
 else
     fail "memberOf not updated on member removal (before=$MR_BEFORE after=$MR_AFTER)"
@@ -790,7 +790,7 @@ fi
 echo "[59/$TOTAL] default locale is UTF-8"
 LANG_VAL=$(docker exec "$CONTAINER" sh -c 'printf %s "$LANG"' 2>/dev/null)
 CHARMAP=$(docker exec "$CONTAINER" locale charmap 2>/dev/null)
-if [ "$CHARMAP" = "UTF-8" ] && echo "$LANG_VAL" | grep -qi 'UTF-8'; then
+if [[ "$CHARMAP" = "UTF-8" ]] && echo "$LANG_VAL" | grep -qi 'UTF-8'; then
     pass "LANG=$LANG_VAL, charmap=$CHARMAP"
 else
     fail "default locale is not UTF-8 (LANG=$LANG_VAL charmap=$CHARMAP)"
@@ -806,7 +806,7 @@ LT_TZ=$(docker exec openldap-loctz cat /etc/timezone 2>/dev/null)
 LT_ZONE=$(docker exec openldap-loctz date +%Z 2>/dev/null)
 LT_LOC=$(docker exec openldap-loctz sh -c 'locale -a 2>/dev/null | grep -ic "^en_US.utf8$"' 2>/dev/null || true)
 docker rm -f openldap-loctz >/dev/null 2>&1 || true
-if $LT_OK && [ "$LT_TZ" = "Europe/Berlin" ] && echo "$LT_ZONE" | grep -qE 'CES?T' && [ "${LT_LOC:-0}" -ge 1 ]; then
+if $LT_OK && [[ "$LT_TZ" = "Europe/Berlin" ]] && echo "$LT_ZONE" | grep -qE 'CES?T' && [[ "${LT_LOC:-0}" -ge 1 ]]; then
     pass "TZ=Europe/Berlin (zone $LT_ZONE) and en_US.UTF-8 generated"
 else
     fail "locale/TZ wrong (ready=$LT_OK tz=$LT_TZ zone=$LT_ZONE en_US=$LT_LOC)"
@@ -824,7 +824,7 @@ EOF
 LB_BEFORE=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=lbuser,ou=people,$BASE" -s base authTimestamp 2>/dev/null | grep -c '^authTimestamp:' || true)
 uwhoami lbuser "$USER_PW"
 LB_AFTER=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=lbuser,ou=people,$BASE" -s base authTimestamp 2>/dev/null | grep -c '^authTimestamp:' || true)
-if [ "${LB_BEFORE:-0}" -eq 0 ] && [ "${LB_AFTER:-0}" -ge 1 ]; then
+if [[ "${LB_BEFORE:-0}" -eq 0 ]] && [[ "${LB_AFTER:-0}" -ge 1 ]]; then
     pass "authTimestamp absent before, recorded after bind"
 else
     fail "lastbind did not record authTimestamp (before=$LB_BEFORE after=$LB_AFTER)"
@@ -845,7 +845,7 @@ EOF
 docker exec openldap-nolb ldapwhoami -x -H "$LDAPI" -D "cn=nlb,ou=people,dc=example,dc=test" -w Secret123 >/dev/null 2>&1
 NLB_TS=$(docker exec openldap-nolb ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "cn=nlb,ou=people,dc=example,dc=test" -s base authTimestamp 2>/dev/null | grep -c '^authTimestamp:' || true)
 docker rm -f openldap-nolb >/dev/null 2>&1 || true
-if $NLB_OK && [ "${NLB_TS:-1}" -eq 0 ]; then
+if $NLB_OK && [[ "${NLB_TS:-1}" -eq 0 ]]; then
     pass "no authTimestamp written when LDAP_LASTBIND is unset"
 else
     fail "authTimestamp written despite lastbind disabled (ready=$NLB_OK ts=$NLB_TS)"
@@ -1006,7 +1006,7 @@ BK_RESTORED=$(docker run --rm -v "$BK_DUMP:/dump.ldif:ro" --entrypoint "" "$IMAG
 ' 2>/dev/null || true)
 docker rm -f openldap-bksrc >/dev/null 2>&1 || true
 rm -f "$BK_DUMP"
-if $BK_OK && [ "${BK_SRC:-0}" -ge 5 ] && [ "${BK_RESTORED:-0}" = "${BK_SRC:-0}" ]; then
+if $BK_OK && [[ "${BK_SRC:-0}" -ge 5 ]] && [[ "${BK_RESTORED:-0}" = "${BK_SRC:-0}" ]]; then
     pass "slapadd restored all $BK_RESTORED entries from the slapcat dump"
 else
     fail "backup round-trip mismatch (src=$BK_SRC restored=$BK_RESTORED)"
@@ -1021,7 +1021,7 @@ for _ in $(seq 1 90); do docker exec openldap-cipher ldapsearch -x -H "$LDAPI" -
 CS_VAL=$(docker exec openldap-cipher ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D cn=admin,cn=config -w admin -b cn=config -s base olcTLSCipherSuite 2>/dev/null | sed -n 's/^olcTLSCipherSuite: //p')
 CS_TLS=$(docker exec openldap-cipher sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
 docker rm -f openldap-cipher >/dev/null 2>&1 || true
-if $CS_OK && [ "$CS_VAL" = 'HIGH:!aNULL:!MD5:!RC4' ] && [ -n "$CS_TLS" ]; then
+if $CS_OK && [[ "$CS_VAL" = 'HIGH:!aNULL:!MD5:!RC4' ]] && [[ -n "$CS_TLS" ]]; then
     pass "olcTLSCipherSuite honoured and ldaps:// negotiates"
 else
     fail "cipher suite not applied (set='$CS_VAL' tls='$CS_TLS')"
@@ -1104,4 +1104,4 @@ fi
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
-[ "$FAIL" -gt 0 ] && exit 1 || exit 0
+[[ "$FAIL" -gt 0 ]] && exit 1 || exit 0
