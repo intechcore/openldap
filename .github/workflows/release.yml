@@ -7,6 +7,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      allow_downgrade:
+        description: Publish an OpenLDAP version lower than the latest release
+        type: boolean
+        default: false
   # Called by rebuild.yml when the base image or its packages changed.
   workflow_call:
     inputs:
@@ -35,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     outputs:
       base_image: ${{ steps.base.outputs.image }}
       base_digest: ${{ steps.base.outputs.digest }}
@@ -43,6 +49,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # main can pin a lower OpenLDAP than the latest release when Symas
+      # withdraws packages. Such a release would move latest backwards.
+      - name: Refuse a version downgrade
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_DOWNGRADE: ${{ inputs.allow_downgrade }}
+        run: |
+          pinned=$(awk -F= '/^ARG OPENLDAP_VERSION=/ { print $2; exit }' Dockerfile)
+          highest=$(gh api "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${GITHUB_REPOSITORY#*/}/versions" \
+            --paginate --jq '.[].metadata.container.tags[]' |
+            sed -n 's/^\([0-9]*\.[0-9]*\.[0-9]*\)-[0-9]*$/\1/p' | sort -V | tail -n 1)
+          echo "Pinned ${pinned}, highest published ${highest:-none}"
+          if [ -n "$highest" ] && [ "$pinned" != "$highest" ] &&
+            [ "$(printf '%s\n%s\n' "$pinned" "$highest" | sort -V | head -n 1)" = "$pinned" ] &&
+            [ "$ALLOW_DOWNGRADE" != "true" ]; then
+            echo "::error::main pins OpenLDAP ${pinned}, lower than the published ${highest}. Run with allow_downgrade to publish it anyway."
+            exit 1
+          fi
 
       - name: Build date
         id: date
