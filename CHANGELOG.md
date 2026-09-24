@@ -1,34 +1,10 @@
 # Changelog
 
-All notable changes to this image are documented here. The image is versioned
+All notable changes to this image are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The image is versioned
 after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
-
-### Changed
-- Releases are automatic. The Rebuild workflow also runs on each push to `main` that changes
-  `Dockerfile`, `entrypoint.sh`, `reload-tls.sh` or `schema/`. It releases a newer pinned
-  OpenLDAP, and a change of those files since the commit of the published image. A merged
-  Renovate update of OpenLDAP now reaches the registry without a manual step. A lower OpenLDAP
-  than the published one is still never released.
-
-### Fixed
-- The Rebuild workflow never started since releases are signed: it called the release without
-  the `id-token` and `attestations` permissions the release needs. It grants them now.
-- A release counts the git tags as taken build numbers, next to the package tags, and never
-  attaches to an existing tag. A deleted package or release can no longer free a number.
-
-### Changed
-- Release notes summarize the release for people instead of listing the
-  commits. They start with the rebuild reason or the OpenLDAP update, then the
-  CHANGELOG entries added since the previous release, then a table of
-  OpenLDAP, the Symas packages and the base image. The commits follow in a
-  collapsed block. `.github/scripts/release-notes.sh` writes them.
-- The weekly rebuild names each Trivy finding it fixes in the release notes:
-  CVE, package, installed and fixed version.
-- A release never publishes an older OpenLDAP than the latest image. The
-  weekly rebuild skips, and a manual release fails unless `allow_downgrade` is
-  set. Symas withdrew its 2.6.15 packages, so main pins 2.6.13 until 2.6.16.
 
 ### Added
 - Line coverage of `entrypoint.sh` and `reload-tls.sh` with kcov. The new
@@ -113,6 +89,21 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - `MIGRATION.md` with the slapcat → strip → reimport recipe from osixia.
 
 ### Changed
+- Releases are automatic. The Rebuild workflow also runs on each push to `main` that changes
+  `Dockerfile`, `entrypoint.sh`, `reload-tls.sh` or `schema/`. It releases a newer pinned
+  OpenLDAP, and a change of those files since the commit of the published image. A merged
+  Renovate update of OpenLDAP now reaches the registry without a manual step. A lower OpenLDAP
+  than the published one is still never released.
+- Release notes summarize the release for people instead of listing the
+  commits. They start with the rebuild reason or the OpenLDAP update, then the
+  CHANGELOG entries added since the previous release, then a table of
+  OpenLDAP, the Symas packages and the base image. The commits follow in a
+  collapsed block. `.github/scripts/release-notes.sh` writes them.
+- The weekly rebuild names each Trivy finding it fixes in the release notes:
+  CVE, package, installed and fixed version.
+- A release never publishes an older OpenLDAP than the latest image. The
+  weekly rebuild skips, and a manual release fails unless `allow_downgrade` is
+  set. Symas withdrew its 2.6.15 packages, so main pins 2.6.13 until 2.6.16.
 - One `ci.yml` replaces `docker-publish.yml`, `lint.yml` and `security.yml`.
   Lint adds actionlint, zizmor and `trivy config`. The integration tests run
   on amd64 and arm64. Trivy fails on CRITICAL and reports HIGH to a tracking
@@ -128,3 +119,17 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - Renovate takes its common rules from the shared preset
   `github>intechcore/renovate-config`, which also turns on OSV vulnerability
   alerts.
+- CI cancels the older run of a pull request on a new push, and every job has a time limit.
+- The Trivy summary and tracking issue come from a local action, the same in each intechcore
+  image repository.
+- ShellCheck runs a pinned version that Renovate updates.
+- `SECURITY.md`, `CONTRIBUTING.md` and `.editorconfig` follow the shared templates. The README
+  and the docs use no em-dashes.
+
+### Fixed
+- The Rebuild workflow never started since releases are signed: it called the release without
+  the `id-token` and `attestations` permissions the release needs. It grants them now.
+- A release counts the git tags as taken build numbers, next to the package tags, and never
+  attaches to an existing tag. A deleted package or release can no longer free a number.
+- A release fails when the package API cannot list the published tags, instead of counting from
+  an empty list.

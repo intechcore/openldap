@@ -1,0 +1,110 @@
+name: Trivy report
+description: >-
+  Summarizes a Trivy image scan, keeps one tracking issue up to date and fails
+  on CRITICAL findings. The same file lives in each intechcore image repository.
+
+inputs:
+  results:
+    description: The Trivy JSON report of fixable CRITICAL and HIGH findings
+    default: trivy-results.json
+  name:
+    description: Optional series name, for example an nginx branch. It goes into the summary and the issue title.
+    default: ''
+  report:
+    description: Update the tracking issue. Pass true on push events only, pull requests from forks get a read-only token.
+    default: 'false'
+  token:
+    description: Token with issues write access, used when report is true
+    default: ''
+
+outputs:
+  critical:
+    description: Number of fixable CRITICAL findings
+    value: ${{ steps.scan.outputs.critical }}
+  high:
+    description: Number of fixable HIGH findings
+    value: ${{ steps.scan.outputs.high }}
+
+runs:
+  using: composite
+  steps:
+    - name: Summarize findings
+      id: scan
+      shell: bash
+      env:
+        RESULTS: ${{ inputs.results }}
+        NAME: ${{ inputs.name }}
+      run: |
+        crit=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "$RESULTS")
+        high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "$RESULTS")
+        {
+          echo "critical=$crit"
+          echo "high=$high"
+          echo "total=$((crit + high))"
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo "| Package | CVE | Severity | Installed | Fixed |"
+          echo "|---|---|---|---|---|"
+          jq -r '.Results[]? | .Vulnerabilities[]? |
+            "| \(.PkgName) | [\(.VulnerabilityID)](\(.PrimaryURL)) | \(.Severity) | \(.InstalledVersion) | \(.FixedVersion // "-") |"' \
+            "$RESULTS"
+        } > findings.md
+        echo "## Trivy image scan${NAME:+ (${NAME})}: ${crit} CRITICAL, ${high} HIGH (fixable)" >> "$GITHUB_STEP_SUMMARY"
+        if [ $((crit + high)) -gt 0 ]; then
+          cat findings.md >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "No fixable CRITICAL or HIGH vulnerabilities." >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Report to the tracking issue
+      if: inputs.report == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        NAME: ${{ inputs.name }}
+        CRITICAL: ${{ steps.scan.outputs.critical }}
+        HIGH: ${{ steps.scan.outputs.high }}
+        TOTAL: ${{ steps.scan.outputs.total }}
+      run: |
+        # One tracking issue per image, or per series when a name is given.
+        title="🛡️ Trivy${NAME:+ (${NAME})}: unresolved image vulnerabilities"
+        label="security"
+        run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+        gh label create "$label" --color B60205 \
+          --description "Automated Trivy scan findings" 2>/dev/null || true
+        existing=$(gh issue list --state open --label "$label" --json number,title |
+          jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty')
+
+        if [ "$TOTAL" -eq 0 ]; then
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Scan on \`${GITHUB_SHA:0:7}\` is clean. Closing."
+            gh issue close "$existing"
+          fi
+          exit 0
+        fi
+
+        {
+          echo "Trivy found **${CRITICAL} CRITICAL** and **${HIGH} HIGH** fixable vulnerabilities."
+          echo ""
+          echo "Commit: \`${GITHUB_SHA:0:7}\`, [workflow run](${run_url})"
+          echo ""
+          cat findings.md
+          echo ""
+          echo "_CRITICAL fails the build, HIGH is reported here. The weekly rebuild picks up fixes._"
+        } > issue-body.md
+
+        if [ -n "$existing" ]; then
+          gh issue edit "$existing" --body-file issue-body.md
+        else
+          gh issue create --title "$title" --label "$label" --body-file issue-body.md
+        fi
+
+    - name: Fail on CRITICAL
+      if: steps.scan.outputs.critical != '0'
+      shell: bash
+      env:
+        CRITICAL: ${{ steps.scan.outputs.critical }}
+      run: |
+        echo "::error::Trivy found ${CRITICAL} fixable CRITICAL vulnerabilities"
+        exit 1
