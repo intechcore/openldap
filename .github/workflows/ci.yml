@@ -1,7 +1,8 @@
 name: CI
 
-# Lint, tests on amd64 and arm64, and the Trivy scan of the image. Every pull
-# request runs it, and main after a merge.
+# Lint, tests on amd64 and arm64, coverage with the SonarCloud analysis, and
+# the Trivy scan of the image. Every pull request runs it, and main after a
+# merge.
 
 on:
   push:
@@ -43,6 +44,10 @@ jobs:
           min-severity: low
           version: 1.30.1
 
+      # Every variable of the README Configuration table appears in a test.
+      - name: Configuration contract
+        run: tests/contract.sh
+
       # Misconfigurations in the Dockerfile, before any image is built.
       - name: Trivy config scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -83,6 +88,53 @@ jobs:
       - name: Run the 2.4 to 2.6 migration test
         if: matrix.arch == 'amd64'
         run: ./tests/integration/test-migration.sh openldap:test
+
+  # Line coverage of entrypoint.sh and reload-tls.sh, and the SonarCloud
+  # analysis. The integration and migration tests run against the coverage
+  # stage of the Dockerfile, which traces both scripts with kcov.
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for the token
+        id: token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          # Pull requests from forks get no secrets. Skip the analysis there.
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No SONAR_TOKEN, SonarCloud analysis skipped"
+          fi
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.token.outputs.present == 'true'
+
+      - name: Build the coverage image
+        if: steps.token.outputs.present == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: coverage
+          load: true
+          tags: openldap:coverage
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=max,scope=coverage
+
+      - name: Run the tests with coverage
+        if: steps.token.outputs.present == 'true'
+        run: tests/coverage.sh openldap:coverage build
+
+      - name: SonarCloud scan
+        if: steps.token.outputs.present == 'true'
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # Fixable vulnerabilities in the built image. CRITICAL fails the build. HIGH
   # goes to a tracking issue only: an unrelated pull request must not turn red

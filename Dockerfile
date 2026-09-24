@@ -8,7 +8,7 @@
 # fast (no QEMU cross-compile) while still using authoritative binaries.
 # Bump the pinned version with `make bump-openldap V=<version>`.
 
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS image
 
 # Upstream OpenLDAP version (used for tags/labels) and the exact Symas apt
 # package revision to install (pinned for reproducible builds).
@@ -90,6 +90,30 @@ EXPOSE 389 636
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["/bin/sh", "-c", "ldapsearch -x -H ldapi://%2Frun%2Fslapd%2Fldapi -b '' -s base -LLL 1.1 >/dev/null 2>&1 || exit 1"]
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["slapd"]
+
+# Coverage variant, used by CI only. kcov traces bash, so /bin/sh points to
+# bash here: the scripts run under #!/bin/sh, which SHELL does not change.
+# Each script is replaced by a wrapper that runs the original under kcov and
+# writes into a new directory below /cov. Mount a host directory there.
+FROM image AS coverage
+# hadolint ignore=DL3008,DL4005
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends bash kcov && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf bash /bin/sh && \
+    mkdir -p /opt/coverage && \
+    mkdir -m 1777 /cov && \
+    mv /usr/local/bin/docker-entrypoint.sh /opt/coverage/entrypoint.sh && \
+    mv /usr/local/bin/reload-tls /opt/coverage/reload-tls.sh
+COPY --chmod=0755 tests/coverage/kcov-run.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chmod=0755 tests/coverage/kcov-run.sh /usr/local/bin/reload-tls
+
+# The published image. Keep this stage last: the release builds the default
+# target.
+FROM image
+
 # Build metadata and the base image the build started from, passed in by the
 # release workflow. The weekly rebuild compares the base digest with the
 # current upstream one.
@@ -102,5 +126,3 @@ LABEL org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.base.name="${BASE_IMAGE}" \
       org.opencontainers.image.base.digest="${BASE_DIGEST}"
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["slapd"]

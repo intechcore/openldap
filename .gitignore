@@ -7,3 +7,6 @@
 
 # build leftovers
 *.bak
+
+# coverage output of tests/coverage.sh
+build/

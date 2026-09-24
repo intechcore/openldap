@@ -17,9 +17,12 @@ See the "Where the binaries come from" section in README.md.
 
 ## Layout
 
-- `Dockerfile` — single-stage: installs the pinned Symas packages
+- `Dockerfile`: stage `image` installs the pinned Symas packages
   (`symas-openldap-server`/`-clients` at `SYMAS_VERSION`) from the Symas LTS apt
   repo onto a slim Debian runtime. No source compile (keeps multi-arch fast).
+  Stage `coverage` (CI only) runs both scripts under kcov, see Coverage below.
+  The last stage, `FROM image` plus the build metadata labels, is the published
+  image: the release builds the default target, so keep it last.
 - `entrypoint.sh` — hybrid bootstrap. Env vars (osixia-compatible) drive
   first-boot config; `/schema`, `/overlays` (cn=config overlay LDIF, applied via
   ldapmodify) and `/bootstrap` LDIF cover the rest. Idempotent across restarts
@@ -37,11 +40,37 @@ See the "Where the binaries come from" section in README.md.
   and `test-arch.sh` (buildx-builds `linux/arm64` and smoke-tests it under QEMU,
   a quick local check; CI runs the full integration test on arm64). Anonymized synthetic
   fixtures under `fixtures/` (people/groups/policies + `overlays/10-ppolicy.ldif`).
+- `tests/coverage.sh`: line coverage (see Coverage below). `tests/contract.sh`
+  checks that every variable of the README Configuration table appears in a
+  test under `tests/`; `tests/contract-allowlist.txt` exempts variables CI
+  cannot test, one per line with a reason.
 - `.github/workflows/` — `ci.yml` (lint with shellcheck, hadolint, actionlint,
-  zizmor and trivy config; integration tests on amd64 and arm64, the 2.4→2.6
-  migration on amd64; Trivy: CRITICAL fails, HIGH goes to a tracking issue),
+  zizmor, the configuration contract and trivy config; integration tests on
+  amd64 and arm64, the 2.4→2.6 migration on amd64; `sonar`: coverage run and
+  SonarCloud scan, skipped without `SONAR_TOKEN`; Trivy: CRITICAL fails, HIGH
+  goes to a tracking issue),
   release, and a weekly rebuild when the `debian:trixie-slim` base changed or
   Trivy finds fixable CRITICAL/HIGH issues. `.trivyignore` accepts DS-0002 (root).
+
+## Coverage
+
+- `tests/coverage.sh <coverage image> <out dir>` (or `make coverage`) runs the
+  integration and migration tests with `COVERAGE_DIR` set, then merges the kcov
+  data (`kcov --merge`) into `<out dir>/coverage.xml` (SonarQube generic format,
+  repository paths) and `<out dir>/html/`. CI writes to `build/`, which
+  `sonar-project.properties` reads.
+- In the `coverage` stage, `/bin/sh` is bash (kcov traces bash only), and
+  `tests/coverage/kcov-run.sh` replaces `docker-entrypoint.sh` and `reload-tls`.
+  It runs the original from `/opt/coverage/` under kcov, one directory per
+  process below `/cov`. `stdbuf -oL` is required: kcov relays the script output
+  through a pipe and would hold the log lines back.
+- kcov is PID 1 there and slapd its child. kcov writes its data when slapd
+  exits, so coverage mode stops containers before `docker rm -f` (the `rmc`
+  helper): a SIGKILL loses the data. The cert watcher holds the kcov trace pipe
+  open, so `rmc` first sends SIGTERM to every process but PID 1. Test 45
+  checks the slapd child instead of PID 1. `COVERAGE_DIR` unset leaves the
+  tests unchanged.
+- kcov marks some continuation lines of multi-line commands as not covered.
 
 ## Key facts
 
@@ -116,6 +145,7 @@ make build
 make test            # integration suite (needs docker compose)
 make test-migration  # 2.4 -> 2.6 migration (pulls osixia/openldap:1.5.0)
 make test-arch       # build linux/arm64 + smoke-test under QEMU emulation
-make lint            # shellcheck + hadolint
+make coverage        # kcov line coverage of the shell scripts (build/)
+make lint            # contract + shellcheck + hadolint
 make scan            # trivy
 ```

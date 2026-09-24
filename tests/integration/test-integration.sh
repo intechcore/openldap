@@ -31,17 +31,49 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=73
+TOTAL=77
 
 # Standalone containers spun up by the configuration-variant tests.
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp"
+# Opt-in coverage mode, used by tests/coverage.sh: COVERAGE_DIR is a host
+# directory, mounted at /cov, where the coverage image writes its kcov data.
+COVERAGE_DIR="${COVERAGE_DIR:-}"
+COV_ARGS=()
+if [[ -n "$COVERAGE_DIR" ]]; then
+    export COVERAGE_DIR
+    export COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml:$SCRIPT_DIR/docker-compose.coverage.yml"
+    COV_ARGS=(-v "$COVERAGE_DIR:/cov")
+fi
+
+# docker run for a container that starts through the entrypoint.
+drun() {
+    docker run "${COV_ARGS[@]+"${COV_ARGS[@]}"}" "$@"
+    return $?
+}
+
+# Removes containers. In coverage mode, stop them first: kcov writes its data
+# when the traced process exits, and a SIGKILL loses it. kcov (PID 1) also
+# waits for the cert watcher, which holds its trace pipe, so signal every
+# process but PID 1 first.
+rmc() {
+    local c
+    if [[ -n "$COVERAGE_DIR" ]]; then
+        for c in "$@"; do
+            docker exec "$c" sh -c 'kill -TERM -1' >/dev/null 2>&1 || true
+        done
+        docker stop "$@" >/dev/null 2>&1 || true
+    fi
+    docker rm -f "$@" >/dev/null 2>&1 || true
+    return 0
+}
+
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp openldap-tlsfiles openldap-uniqattr"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
     cd "$SCRIPT_DIR"
     IMAGE_NAME="$IMAGE_NAME" IMAGE_TAG="$IMAGE_TAG" docker compose down -v 2>/dev/null || true
     # shellcheck disable=SC2086
-    docker rm -f $EXTRA_CONTAINERS >/dev/null 2>&1 || true
+    rmc $EXTRA_CONTAINERS
 }
 trap cleanup EXIT
 
@@ -580,9 +612,18 @@ else
 fi
 
 echo "[45/$TOTAL] slapd runs as the non-root openldap user"
-P1=$(docker exec "$CONTAINER" sh -c 'cat /proc/1/comm; awk "/^Uid:/{print \$2}" /proc/1/status' 2>/dev/null || true)
+if [[ -n "$COVERAGE_DIR" ]]; then
+    # kcov is PID 1 in the coverage image, so check its slapd child instead.
+    P1=$(docker exec "$CONTAINER" sh -c 'exec awk "$0" /proc/[0-9]*/status' \
+        '/^Name:/ {n = $2} /^State:/ {st = $2} /^Uid:/ && n == "slapd" && st != "Z" {print n; print $2; exit}' \
+        2>/dev/null || true)
+    P1_WHAT="the slapd child of kcov"
+else
+    P1=$(docker exec "$CONTAINER" sh -c 'cat /proc/1/comm; awk "/^Uid:/{print \$2}" /proc/1/status' 2>/dev/null || true)
+    P1_WHAT="PID 1"
+fi
 if echo "$P1" | grep -qx slapd && echo "$P1" | grep -qx 999; then
-    pass "PID 1 is slapd running as uid 999"
+    pass "$P1_WHAT is slapd running as uid 999"
 else
     fail "slapd not running as non-root (got: $(echo "$P1" | tr '\n' ' '))"
 fi
@@ -619,14 +660,14 @@ fi
 
 # ── Configuration variants (standalone containers) ──────────────────────────
 echo "[48/$TOTAL] non-TLS mode: ldap:// works, ldaps:// is not served"
-docker rm -f openldap-notls >/dev/null 2>&1 || true
-docker run -d --name openldap-notls -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+rmc openldap-notls
+drun -d --name openldap-notls -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
 NT_OK=false
 for _ in $(seq 1 90); do docker exec openldap-notls ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { NT_OK=true; break; }; sleep 1; done
 NT_LDAP=false; NT_LDAPS=false
 docker exec openldap-notls ldapsearch -x -H ldap://localhost -b "" -s base >/dev/null 2>&1 && NT_LDAP=true
 docker exec openldap-notls ldapsearch -x -H ldaps://localhost -b "" -s base >/dev/null 2>&1 || NT_LDAPS=true
-docker rm -f openldap-notls >/dev/null 2>&1 || true
+rmc openldap-notls
 if $NT_OK && $NT_LDAP && $NT_LDAPS; then
     pass "ldap:// works and ldaps:// is absent when LDAP_TLS=false"
 else
@@ -634,7 +675,7 @@ else
 fi
 
 echo "[49/$TOTAL] entrypoint runs a non-slapd command (CMD override)"
-CMD_OUT=$(docker run --rm -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" sh -c 'echo CMD_OVERRIDE_OK' 2>/dev/null || true)
+CMD_OUT=$(drun --rm -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" sh -c 'echo CMD_OVERRIDE_OK' 2>/dev/null || true)
 if echo "$CMD_OUT" | grep -q "CMD_OVERRIDE_OK"; then
     pass "custom command executed via the entrypoint"
 else
@@ -642,15 +683,15 @@ else
 fi
 
 echo "[50/$TOTAL] base DN derived from domain and overridable"
-docker rm -f openldap-domain openldap-basedn >/dev/null 2>&1 || true
-docker run -d --name openldap-domain  -e LDAP_DOMAIN=a.b.test    -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
-docker run -d --name openldap-basedn  -e LDAP_DOMAIN=example.test -e LDAP_BASE_DN="dc=acme,dc=internal" -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+rmc openldap-domain openldap-basedn
+drun -d --name openldap-domain  -e LDAP_DOMAIN=a.b.test    -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+drun -d --name openldap-basedn  -e LDAP_DOMAIN=example.test -e LDAP_BASE_DN="dc=acme,dc=internal" -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
 for _ in $(seq 1 90); do docker exec openldap-domain ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && break; sleep 1; done
 for _ in $(seq 1 90); do docker exec openldap-basedn ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && break; sleep 1; done
 DERIVED=false; OVERRIDE=false
 docker exec openldap-domain ldapsearch -LLL -x -H "$LDAPI" -b "" -s base namingContexts 2>/dev/null | grep -qi "dc=a,dc=b,dc=test" && DERIVED=true
 docker exec openldap-basedn ldapsearch -LLL -x -H "$LDAPI" -b "" -s base namingContexts 2>/dev/null | grep -qi "dc=acme,dc=internal" && OVERRIDE=true
-docker rm -f openldap-domain openldap-basedn >/dev/null 2>&1 || true
+rmc openldap-domain openldap-basedn
 if $DERIVED && $OVERRIDE; then
     pass "a.b.test -> dc=a,dc=b,dc=test; LDAP_BASE_DN override honoured"
 else
@@ -735,8 +776,8 @@ cp "$MNT/ldap.crt" "$MNT/ca.crt"
 # slapd (uid 999) must traverse the mounted dir and read the files; mktemp -d is
 # 0700, which blocks it on Linux (Docker Desktop on macOS masks this).
 chmod 755 "$MNT"; chmod 644 "$MNT"/*
-docker rm -f openldap-mtls >/dev/null 2>&1 || true
-docker run -d --name openldap-mtls -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+rmc openldap-mtls
+drun -d --name openldap-mtls -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=never -v "$MNT:/container/certs" "$IMAGE" >/dev/null 2>&1
 MC_OK=false
 for _ in $(seq 1 90); do docker exec openldap-mtls ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { MC_OK=true; break; }; sleep 1; done
@@ -752,7 +793,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=mounted-renewed" -k
 cp -f "$MNT/ldap.crt" "$MNT/ca.crt"; chmod 644 "$MNT"/*
 docker exec openldap-mtls reload-tls >/dev/null 2>&1 || true
 MC_SUBJ2=$(docker exec openldap-mtls sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject' 2>/dev/null || true)
-docker rm -f openldap-mtls >/dev/null 2>&1 || true
+rmc openldap-mtls
 rm -rf "$MNT"
 if echo "$MC_SUBJ2" | grep -q "CN=mounted-renewed"; then
     pass "reload-tls served the renewed mounted cert ($MC_SUBJ2)"
@@ -768,8 +809,8 @@ openssl x509 -req -in "$MT/srv.csr" -CA "$MT/ca.crt" -CAkey "$MT/ca.key" -CAcrea
 openssl req -newkey rsa:2048 -nodes -subj "/CN=client" -keyout "$MT/client.key" -out "$MT/cli.csr" 2>/dev/null
 openssl x509 -req -in "$MT/cli.csr" -CA "$MT/ca.crt" -CAkey "$MT/ca.key" -CAcreateserial -days 2 -out "$MT/client.crt" 2>/dev/null
 chmod 755 "$MT"; chmod 644 "$MT"/*
-docker rm -f openldap-cca >/dev/null 2>&1 || true
-docker run -d --name openldap-cca -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+rmc openldap-cca
+drun -d --name openldap-cca -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=demand -v "$MT:/container/certs" "$IMAGE" >/dev/null 2>&1
 CC_OK=false
 for _ in $(seq 1 90); do docker exec openldap-cca ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { CC_OK=true; break; }; sleep 1; done
@@ -778,7 +819,7 @@ docker exec -e LDAPTLS_REQCERT=allow openldap-cca \
     ldapsearch -x -H ldaps://localhost -b "" -s base >/dev/null 2>&1 || CC_NOCERT=true
 docker exec -e LDAPTLS_REQCERT=allow -e LDAPTLS_CERT=/container/certs/client.crt -e LDAPTLS_KEY=/container/certs/client.key openldap-cca \
     ldapsearch -x -H ldaps://localhost -b "" -s base >/dev/null 2>&1 && CC_WITHCERT=true
-docker rm -f openldap-cca >/dev/null 2>&1 || true
+rmc openldap-cca
 rm -rf "$MT"
 if $CC_OK && $CC_NOCERT && $CC_WITHCERT; then
     pass "ldaps rejected without a client cert, accepted with a valid one"
@@ -797,15 +838,15 @@ else
 fi
 
 echo "[60/$TOTAL] TZ sets the timezone and a non-default locale is generated"
-docker rm -f openldap-loctz >/dev/null 2>&1 || true
-docker run -d --name openldap-loctz -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+rmc openldap-loctz
+drun -d --name openldap-loctz -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -e TZ=Europe/Berlin -e LANG=en_US.UTF-8 "$IMAGE" >/dev/null 2>&1
 LT_OK=false
 for _ in $(seq 1 90); do docker exec openldap-loctz ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { LT_OK=true; break; }; sleep 1; done
 LT_TZ=$(docker exec openldap-loctz cat /etc/timezone 2>/dev/null)
 LT_ZONE=$(docker exec openldap-loctz date +%Z 2>/dev/null)
 LT_LOC=$(docker exec openldap-loctz sh -c 'locale -a 2>/dev/null | grep -ic "^en_US.utf8$"' 2>/dev/null || true)
-docker rm -f openldap-loctz >/dev/null 2>&1 || true
+rmc openldap-loctz
 if $LT_OK && [[ "$LT_TZ" = "Europe/Berlin" ]] && echo "$LT_ZONE" | grep -qE 'CES?T' && [[ "${LT_LOC:-0}" -ge 1 ]]; then
     pass "TZ=Europe/Berlin (zone $LT_ZONE) and en_US.UTF-8 generated"
 else
@@ -831,8 +872,8 @@ else
 fi
 
 echo "[62/$TOTAL] lastbind disabled (default): authTimestamp is NOT written"
-docker rm -f openldap-nolb >/dev/null 2>&1 || true
-docker run -d --name openldap-nolb -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+rmc openldap-nolb
+drun -d --name openldap-nolb -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
 NLB_OK=false
 for _ in $(seq 1 90); do docker exec openldap-nolb ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { NLB_OK=true; break; }; sleep 1; done
 docker exec -i openldap-nolb ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
@@ -844,7 +885,7 @@ userPassword: Secret123
 EOF
 docker exec openldap-nolb ldapwhoami -x -H "$LDAPI" -D "cn=nlb,ou=people,dc=example,dc=test" -w Secret123 >/dev/null 2>&1
 NLB_TS=$(docker exec openldap-nolb ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "cn=nlb,ou=people,dc=example,dc=test" -s base authTimestamp 2>/dev/null | grep -c '^authTimestamp:' || true)
-docker rm -f openldap-nolb >/dev/null 2>&1 || true
+rmc openldap-nolb
 if $NLB_OK && [[ "${NLB_TS:-1}" -eq 0 ]]; then
     pass "no authTimestamp written when LDAP_LASTBIND is unset"
 else
@@ -876,8 +917,8 @@ else
 fi
 
 echo "[64/$TOTAL] unique disabled (default): a duplicate mail is allowed"
-docker rm -f openldap-nouniq >/dev/null 2>&1 || true
-docker run -d --name openldap-nouniq -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+rmc openldap-nouniq
+drun -d --name openldap-nouniq -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
 NU_OK=false
 for _ in $(seq 1 90); do docker exec openldap-nouniq ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { NU_OK=true; break; }; sleep 1; done
 docker exec -i openldap-nouniq ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
@@ -895,7 +936,7 @@ cn: b
 sn: x
 mail: same@example.test
 EOF
-docker rm -f openldap-nouniq >/dev/null 2>&1 || true
+rmc openldap-nouniq
 if $NU_OK && $NU_DUP; then
     pass "duplicate mail accepted when LDAP_UNIQUE is unset"
 else
@@ -904,8 +945,8 @@ fi
 
 # ── password hashing scheme ─────────────────────────────────────────────────
 echo "[65/$TOTAL] LDAP_PASSWORD_HASH applies the chosen scheme (argon2)"
-docker rm -f openldap-argon2 >/dev/null 2>&1 || true
-docker run -d --name openldap-argon2 -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin -e LDAP_PASSWORD_HASH='{ARGON2}' "$IMAGE" >/dev/null 2>&1
+rmc openldap-argon2
+drun -d --name openldap-argon2 -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin -e LDAP_PASSWORD_HASH='{ARGON2}' "$IMAGE" >/dev/null 2>&1
 AR_OK=false
 for _ in $(seq 1 90); do docker exec openldap-argon2 ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { AR_OK=true; break; }; sleep 1; done
 docker exec -i openldap-argon2 ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
@@ -918,7 +959,7 @@ docker exec openldap-argon2 ldappasswd -x -H "$LDAPI" -D "cn=admin,dc=example,dc
 AR_HASH=$(docker exec openldap-argon2 ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "cn=ar,ou=people,dc=example,dc=test" userPassword 2>/dev/null | sed -n 's/^userPassword:: //p' | base64 -d 2>/dev/null || true)
 AR_BIND=false
 docker exec openldap-argon2 ldapwhoami -x -H "$LDAPI" -D "cn=ar,ou=people,dc=example,dc=test" -w ArgonPass123 >/dev/null 2>&1 && AR_BIND=true
-docker rm -f openldap-argon2 >/dev/null 2>&1 || true
+rmc openldap-argon2
 if $AR_OK && echo "$AR_HASH" | grep -q '{ARGON2}' && $AR_BIND; then
     pass "password stored as {ARGON2} and binds"
 else
@@ -927,8 +968,8 @@ fi
 
 # ── rfc2307bis schema ───────────────────────────────────────────────────────
 echo "[66/$TOTAL] LDAP_RFC2307BIS allows unified POSIX user + group entries"
-docker rm -f openldap-bis >/dev/null 2>&1 || true
-docker run -d --name openldap-bis -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin -e LDAP_RFC2307BIS=true "$IMAGE" >/dev/null 2>&1
+rmc openldap-bis
+drun -d --name openldap-bis -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin -e LDAP_RFC2307BIS=true "$IMAGE" >/dev/null 2>&1
 BIS_OK=false
 for _ in $(seq 1 90); do docker exec openldap-bis ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { BIS_OK=true; break; }; sleep 1; done
 BIS_USER=false; BIS_GROUP=false
@@ -952,7 +993,7 @@ gidNumber: 10001
 uniqueMember: cn=puser,ou=people,dc=example,dc=test
 memberUid: puser
 EOF
-docker rm -f openldap-bis >/dev/null 2>&1 || true
+rmc openldap-bis
 if $BIS_OK && $BIS_USER && $BIS_GROUP; then
     pass "unified inetOrgPerson+posixAccount and groupOfUniqueNames+posixGroup accepted"
 else
@@ -977,8 +1018,8 @@ fi
 
 # ── Backup/restore, TLS cipher, bind & policy edge cases ────────────────────
 echo "[68/$TOTAL] slapcat backup round-trips through an offline slapadd restore"
-docker rm -f openldap-bksrc >/dev/null 2>&1 || true
-docker run -d --name openldap-bksrc -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+rmc openldap-bksrc
+drun -d --name openldap-bksrc -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -e LDAP_MEMBEROF=false -e LDAP_REFINT=false "$IMAGE" >/dev/null 2>&1
 BK_OK=false
 for _ in $(seq 1 90); do docker exec openldap-bksrc ldapsearch -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "dc=example,dc=test" -s base o >/dev/null 2>&1 && { BK_OK=true; break; }; sleep 1; done
@@ -1004,7 +1045,7 @@ BK_RESTORED=$(docker run --rm -v "$BK_DUMP:/dump.ldif:ro" --entrypoint "" "$IMAG
     slapadd -F /tmp/cfg -b "dc=example,dc=test" -l /dump.ldif >/dev/null 2>&1
     slapcat -F /tmp/cfg -b "dc=example,dc=test" 2>/dev/null | grep -c "^dn:"
 ' 2>/dev/null || true)
-docker rm -f openldap-bksrc >/dev/null 2>&1 || true
+rmc openldap-bksrc
 rm -f "$BK_DUMP"
 if $BK_OK && [[ "${BK_SRC:-0}" -ge 5 ]] && [[ "${BK_RESTORED:-0}" = "${BK_SRC:-0}" ]]; then
     pass "slapadd restored all $BK_RESTORED entries from the slapcat dump"
@@ -1013,14 +1054,14 @@ else
 fi
 
 echo "[69/$TOTAL] LDAP_TLS_CIPHER_SUITE is applied and TLS still works"
-docker rm -f openldap-cipher >/dev/null 2>&1 || true
-docker run -d --name openldap-cipher -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+rmc openldap-cipher
+drun -d --name openldap-cipher -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=never -e LDAP_TLS_CIPHER_SUITE='HIGH:!aNULL:!MD5:!RC4' "$IMAGE" >/dev/null 2>&1
 CS_OK=false
 for _ in $(seq 1 90); do docker exec openldap-cipher ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { CS_OK=true; break; }; sleep 1; done
 CS_VAL=$(docker exec openldap-cipher ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D cn=admin,cn=config -w admin -b cn=config -s base olcTLSCipherSuite 2>/dev/null | sed -n 's/^olcTLSCipherSuite: //p')
 CS_TLS=$(docker exec openldap-cipher sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
-docker rm -f openldap-cipher >/dev/null 2>&1 || true
+rmc openldap-cipher
 if $CS_OK && [[ "$CS_VAL" = 'HIGH:!aNULL:!MD5:!RC4' ]] && [[ -n "$CS_TLS" ]]; then
     pass "olcTLSCipherSuite honoured and ldaps:// negotiates"
 else
@@ -1035,8 +1076,8 @@ else
 fi
 
 echo "[71/$TOTAL] reload-tls is a safe no-op on a non-TLS server"
-docker rm -f openldap-misc >/dev/null 2>&1 || true
-docker run -d --name openldap-misc -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
+rmc openldap-misc
+drun -d --name openldap-misc -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin "$IMAGE" >/dev/null 2>&1
 MI_OK=false
 for _ in $(seq 1 90); do docker exec openldap-misc ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { MI_OK=true; break; }; sleep 1; done
 if $MI_OK && docker exec openldap-misc reload-tls 2>&1 | grep -qi 'not configured'; then
@@ -1051,7 +1092,7 @@ if docker exec openldap-misc ldapwhoami -x -H "$LDAPI" -D "cn=admin,cn=config" -
 else
     fail "config rootdn did not accept the admin password as default"
 fi
-docker rm -f openldap-misc >/dev/null 2>&1 || true
+rmc openldap-misc
 
 echo "[73/$TOTAL] ppolicy: a password past pwdMaxAge (grace 0) is expired"
 PWX_OV="$(mktemp -d)"; PWX_BS="$(mktemp -d)"
@@ -1084,8 +1125,8 @@ sn: x
 userPassword: Secret123
 EOF
 chmod 755 "$PWX_OV" "$PWX_BS"; chmod 644 "$PWX_OV"/* "$PWX_BS"/*
-docker rm -f openldap-pwexp >/dev/null 2>&1 || true
-docker run -d --name openldap-pwexp -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+rmc openldap-pwexp
+drun -d --name openldap-pwexp -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
     -v "$PWX_OV:/overlays:ro" -v "$PWX_BS:/bootstrap:ro" "$IMAGE" >/dev/null 2>&1
 PX_OK=false
 for _ in $(seq 1 90); do docker exec openldap-pwexp ldapsearch -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin -b "dc=example,dc=test" -s base o >/dev/null 2>&1 && { PX_OK=true; break; }; sleep 1; done
@@ -1093,12 +1134,109 @@ PX_FRESH=false; PX_EXPIRED=false
 docker exec openldap-pwexp ldapwhoami -x -H "$LDAPI" -D "cn=exp,ou=people,dc=example,dc=test" -w Secret123 >/dev/null 2>&1 && PX_FRESH=true
 sleep 4
 docker exec openldap-pwexp ldapwhoami -x -H "$LDAPI" -D "cn=exp,ou=people,dc=example,dc=test" -w Secret123 >/dev/null 2>&1 || PX_EXPIRED=true
-docker rm -f openldap-pwexp >/dev/null 2>&1 || true
+rmc openldap-pwexp
 rm -rf "$PWX_OV" "$PWX_BS"
 if $PX_OK && $PX_FRESH && $PX_EXPIRED; then
     pass "bind works fresh, then is refused once the password expires"
 else
     fail "pwdMaxAge expiry wrong (ready=$PX_OK fresh=$PX_FRESH expired=$PX_EXPIRED)"
+fi
+
+# ── TLS file names, protocol floor, cert watcher ───────────────────────────
+echo "[74/$TOTAL] custom TLS file names and DH params are used"
+TF="$(mktemp -d)"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=named-files" \
+    -keyout "$TF/server.key" -out "$TF/server.pem" 2>/dev/null
+cp "$TF/server.pem" "$TF/chain.pem"
+# The OpenSSL of the image knows the RFC 7919 groups, the host one may not.
+docker run --rm --entrypoint "" "$IMAGE" \
+    openssl genpkey -genparam -algorithm DH -pkeyopt group:ffdhe2048 > "$TF/dh.pem" 2>/dev/null
+chmod 755 "$TF"; chmod 644 "$TF"/*
+rmc openldap-tlsfiles
+drun -d --name openldap-tlsfiles -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_TLS=true -e LDAP_TLS_VERIFY_CLIENT=never \
+    -e LDAP_TLS_CRT_FILENAME=server.pem -e LDAP_TLS_KEY_FILENAME=server.key \
+    -e LDAP_TLS_CA_CRT_FILENAME=chain.pem -e LDAP_TLS_DH_PARAM_FILENAME=dh.pem \
+    -e LDAP_TLS_PROTOCOL_MIN=3.4 -e LDAP_TLS_WATCH=true -e LDAP_TLS_WATCH_INTERVAL=2 \
+    -v "$TF:/container/certs" "$IMAGE" >/dev/null 2>&1
+TF_OK=false
+for _ in $(seq 1 90); do docker exec openldap-tlsfiles ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { TF_OK=true; break; }; sleep 1; done
+tf_subject() {
+    docker exec openldap-tlsfiles sh -c 'echo | openssl s_client -connect 127.0.0.1:636 2>/dev/null | openssl x509 -noout -subject' 2>/dev/null || true
+    return 0
+}
+TF_CFG=$(docker exec openldap-tlsfiles ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D cn=admin,cn=config -w admin \
+    -b cn=config -s base olcTLSCertificateFile olcTLSCertificateKeyFile olcTLSCACertificateFile \
+    olcTLSDHParamFile olcTLSProtocolMin 2>/dev/null || true)
+TF_SUBJ=$(tf_subject)
+if $TF_OK && echo "$TF_SUBJ" | grep -q "CN=named-files" \
+        && echo "$TF_CFG" | grep -qx "olcTLSCertificateFile: /container/certs/server.pem" \
+        && echo "$TF_CFG" | grep -qx "olcTLSCertificateKeyFile: /container/certs/server.key" \
+        && echo "$TF_CFG" | grep -qx "olcTLSCACertificateFile: /container/certs/chain.pem" \
+        && echo "$TF_CFG" | grep -qx "olcTLSDHParamFile: /container/certs/dh.pem"; then
+    pass "server.pem, server.key, chain.pem and dh.pem configured and served"
+else
+    fail "custom TLS file names not applied (ready=$TF_OK subj='$TF_SUBJ' cfg='$(echo "$TF_CFG" | tr '\n' ' ')')"
+fi
+
+echo "[75/$TOTAL] LDAP_TLS_PROTOCOL_MIN=3.4 refuses TLS 1.2 and accepts TLS 1.3"
+TF_T12=$(docker exec openldap-tlsfiles sh -c 'echo | openssl s_client -connect 127.0.0.1:636 -tls1_2 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
+TF_T13=$(docker exec openldap-tlsfiles sh -c 'echo | openssl s_client -connect 127.0.0.1:636 -tls1_3 2>/dev/null | openssl x509 -noout -subject 2>/dev/null' || true)
+if echo "$TF_CFG" | grep -qx "olcTLSProtocolMin: 3.4" && [[ -z "$TF_T12" ]] && [[ -n "$TF_T13" ]]; then
+    pass "olcTLSProtocolMin=3.4, TLS 1.2 refused, TLS 1.3 works"
+else
+    fail "TLS floor 3.4 wrong (tls1.2='$TF_T12' tls1.3='$TF_T13')"
+fi
+
+echo "[76/$TOTAL] LDAP_TLS_WATCH reloads a renewed certificate on its own"
+# Write the new pair next to the old one. Move the key first and the
+# certificate last, since the watcher polls the certificate.
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=watched-renewal" \
+    -keyout "$TF/new.key" -out "$TF/new.pem" 2>/dev/null
+chmod 644 "$TF/new.key" "$TF/new.pem"
+mv -f "$TF/new.key" "$TF/server.key"
+mv -f "$TF/new.pem" "$TF/server.pem"
+TF_RENEWED=false
+for _ in $(seq 1 30); do
+    tf_subject | grep -q "CN=watched-renewal" && { TF_RENEWED=true; break; }
+    sleep 1
+done
+TF_LOG=$(docker logs openldap-tlsfiles 2>&1 | grep -c "TLS certificate change detected" || true)
+rmc openldap-tlsfiles
+rm -rf "$TF"
+if $TF_RENEWED && [[ "${TF_LOG:-0}" -ge 1 ]]; then
+    pass "the watcher saw the renewal and slapd serves the new cert"
+else
+    fail "cert watcher did not reload (renewed=$TF_RENEWED logged=$TF_LOG)"
+fi
+
+echo "[77/$TOTAL] LDAP_UNIQUE_ATTRIBUTES replaces the default attribute list"
+rmc openldap-uniqattr
+drun -d --name openldap-uniqattr -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_UNIQUE=true -e LDAP_UNIQUE_ATTRIBUTES=employeeNumber "$IMAGE" >/dev/null 2>&1
+UA_OK=false
+for _ in $(seq 1 90); do docker exec openldap-uniqattr ldapsearch -x -H "$LDAPI" -b "" -s base >/dev/null 2>&1 && { UA_OK=true; break; }; sleep 1; done
+ua_add() {
+    local cn="$1" mail="$2" number="$3"
+    docker exec -i openldap-uniqattr ldapadd -x -H "$LDAPI" -D "cn=admin,dc=example,dc=test" -w admin >/dev/null 2>&1 <<EOF
+dn: cn=$cn,ou=people,dc=example,dc=test
+objectClass: inetOrgPerson
+cn: $cn
+sn: x
+mail: $mail
+employeeNumber: $number
+EOF
+    return $?
+}
+UA_FIRST=false; UA_DUP_NUM=false; UA_DUP_MAIL=false
+ua_add ua1 same@example.test 1001 && UA_FIRST=true
+ua_add ua2 other@example.test 1001 || UA_DUP_NUM=true
+ua_add ua3 same@example.test 1003 && UA_DUP_MAIL=true
+rmc openldap-uniqattr
+if $UA_OK && $UA_FIRST && $UA_DUP_NUM && $UA_DUP_MAIL; then
+    pass "duplicate employeeNumber rejected, duplicate mail accepted"
+else
+    fail "unique attribute list wrong (ready=$UA_OK first=$UA_FIRST dupNumRejected=$UA_DUP_NUM dupMailAccepted=$UA_DUP_MAIL)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

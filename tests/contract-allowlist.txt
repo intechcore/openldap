@@ -1,0 +1,4 @@
+# Variables from the README Configuration table that CI cannot test.
+# tests/contract.sh skips them. One per line: the variable, then the reason.
+# Example:
+#   LDAP_EXAMPLE  needs hardware that CI runners do not have
