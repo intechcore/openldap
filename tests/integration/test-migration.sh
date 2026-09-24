@@ -75,8 +75,11 @@ docker run -d --name "$SRC" \
     -e LDAP_ADMIN_PASSWORD="$ADMIN_PW" \
     "$SRC_IMAGE" >/dev/null 2>&1
 src_ok=false
+# osixia answers from a setup slapd first and restarts it. Wait for the final
+# one, which osixia logs as the slapd run process.
 for _ in $(seq 1 90); do
-    if docker exec "$SRC" ldapsearch -x -H ldap://localhost -b "" -s base >/dev/null 2>&1; then
+    if docker logs "$SRC" 2>&1 | grep -q 'Running /container/run/process/slapd/run' \
+            && docker exec "$SRC" ldapsearch -x -H ldap://localhost -b "" -s base >/dev/null 2>&1; then
         src_ok=true; break
     fi
     sleep 1
