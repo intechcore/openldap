@@ -49,8 +49,11 @@ See the "Where the binaries come from" section in README.md.
   amd64 and arm64, the 2.4→2.6 migration on amd64; `sonar`: coverage run and
   SonarCloud scan, skipped without `SONAR_TOKEN`; Trivy: CRITICAL fails, HIGH
   goes to a tracking issue),
-  release, and a weekly rebuild when the `debian:trixie-slim` base changed or
-  Trivy finds fixable CRITICAL/HIGH issues. `.trivyignore` accepts DS-0002 (root).
+  release, and `rebuild.yml`, which releases automatically, weekly and on a push
+  that changes an image input: a newer pinned OpenLDAP, a new base digest, a
+  changed input file since the image revision, or fixable CRITICAL/HIGH
+  findings. It never releases a lower OpenLDAP. `.trivyignore` accepts DS-0002
+  (root).
 
 ## Coverage
 

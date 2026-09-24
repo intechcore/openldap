@@ -1,16 +1,32 @@
 name: Rebuild
 
-# The image builds on debian:trixie-slim and installs its packages with apt.
-# Debian ships security fixes as package updates and rebuilds the base image
-# under the same tag. Neither changes a file in git, so Renovate cannot see
-# them. This workflow checks the published image once a week and releases a
-# new build (2.6.13-4 -> 2.6.13-5) when one of these is true:
-#   - the upstream base image digest differs from the one the image was built on
-#   - Trivy finds fixable CRITICAL or HIGH vulnerabilities in the published image
+# Checks the published image and releases a new build (2.6.13-4 -> 2.6.13-5,
+# the first build of a new OpenLDAP gets -1) when one of these is true:
+#   - the Dockerfile pins a newer OpenLDAP than the published image (Renovate
+#     moved the Symas packages to a new version)
+#   - the base image digest pinned in FROM differs from the one the image was
+#     built on (Renovate updated the digest after Debian rebuilt the tag)
+#   - Trivy finds fixable CRITICAL or HIGH vulnerabilities in the published
+#     image. Debian ships security fixes as package updates, which change no
+#     file in git.
+#   - a file that goes into the image changed since the commit the image was
+#     built from (org.opencontainers.image.revision)
+# It runs once a week, and on every push to main that changes an input, so a
+# merged Renovate update releases by itself.
 
 on:
   schedule:
     - cron: '15 5 * * 1'
+  push:
+    branches: [main]
+    # The inputs of the image, and the check itself. Keep this list in sync
+    # with INPUTS in the Decide step.
+    paths:
+      - Dockerfile
+      - entrypoint.sh
+      - reload-tls.sh
+      - 'schema/**'
+      - .github/workflows/rebuild.yml
   workflow_dispatch:
 
 env:
@@ -19,6 +35,13 @@ env:
 
 # No default token permissions. Each job asks for what it needs.
 permissions: {}
+
+# One check and release at a time. A run that waits starts after the previous
+# release, so it compares with that image: a burst of pushes never publishes
+# two builds for the same change.
+concurrency:
+  group: rebuild
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -30,9 +53,11 @@ jobs:
       rebuild: ${{ steps.decide.outputs.rebuild }}
       reason: ${{ steps.decide.outputs.reason }}
     steps:
+      # The full history, to compare the inputs with the commit of the image.
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Log in to Container Registry
@@ -49,10 +74,12 @@ jobs:
           docker pull -q --platform linux/amd64 "$image"
           digest=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.base.digest"}}' "$image")
           version=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
+          revision=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
           {
             echo "image=$image"
             echo "base_digest=$digest"
             echo "version=$version"
+            echo "revision=$revision"
           } >> "$GITHUB_OUTPUT"
 
       - name: Resolve upstream base image digest
@@ -82,6 +109,10 @@ jobs:
           BUILT_ON: ${{ steps.published.outputs.base_digest }}
           UPSTREAM: ${{ steps.upstream.outputs.digest }}
           PUBLISHED: ${{ steps.published.outputs.version }}
+          REVISION: ${{ steps.published.outputs.revision }}
+          # The files that go into the image. Keep the list in sync with the
+          # push paths above.
+          INPUTS: Dockerfile entrypoint.sh reload-tls.sh schema
         run: |
           # A rebuild never publishes an older OpenLDAP than the latest image.
           # main can pin a lower version when Symas withdraws packages.
@@ -100,16 +131,29 @@ jobs:
             | (.[:10] | join(", ")) + (if length > 10 then ", and \(length - 10) more" else "" end)' trivy-results.json)
           fixable=$(jq '[.Results[]?.Vulnerabilities[]? | .VulnerabilityID + .PkgName] | unique | length' trivy-results.json)
           reasons=()
+          if [ -n "$PUBLISHED" ] && [ "$pinned" != "$PUBLISHED" ]; then
+            reasons+=("New OpenLDAP version ${pinned}, the published image holds ${PUBLISHED}.")
+          fi
           if [ "$BUILT_ON" != "$UPSTREAM" ]; then
             reasons+=("Base image ${BASE%@*} rebuilt upstream (digest ${BUILT_ON:-unknown} -> ${UPSTREAM}).")
           fi
           if [ "$fixable" -gt 0 ]; then
             reasons+=("Fixes ${fixable} CRITICAL/HIGH vulnerabilities found by Trivy: ${findings}.")
           fi
+          # INPUTS is a list of paths, split on purpose.
+          # shellcheck disable=SC2086
+          if [ -z "$REVISION" ] || ! git cat-file -e "${REVISION}^{commit}" 2>/dev/null; then
+            echo "::warning::The image names no known commit (${REVISION:-none}), its inputs are not compared."
+          else
+            changed=$(git diff --name-only "$REVISION" HEAD -- $INPUTS)
+            if [ -n "$changed" ]; then
+              reasons+=("Image inputs changed since ${REVISION:0:7}: $(echo "$changed" | paste -sd, - | sed 's/,/, /g').")
+            fi
+          fi
 
           if [ ${#reasons[@]} -eq 0 ]; then
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
-            echo "No rebuild needed: base image unchanged, no fixable findings." >> "$GITHUB_STEP_SUMMARY"
+            echo "No rebuild needed: OpenLDAP version, base image and image inputs unchanged, no fixable findings." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           reason=$(printf '%s ' "${reasons[@]}")
