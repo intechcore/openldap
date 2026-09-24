@@ -38,7 +38,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends ca-certificates curl openssl && \
-    curl -fsSL https://repo.symas.com/repo/gpg/RPM-GPG-KEY-symas-com-signing-key \
+    curl -fsSL --proto '=https' --tlsv1.2 https://repo.symas.com/repo/gpg/RPM-GPG-KEY-symas-com-signing-key \
         -o /usr/share/keyrings/symas-key.asc && \
     echo "deb [signed-by=/usr/share/keyrings/symas-key.asc] https://repo.symas.com/repo/deb/main/release26 trixie main" \
         > /etc/apt/sources.list.d/soldap-release26.list && \

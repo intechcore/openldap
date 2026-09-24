@@ -93,7 +93,7 @@ EOF
 docker exec -i "$SRC" ldapadd -x -H ldap://localhost -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 < "$FIX/bootstrap/21-people.ldif" || load_ok=false
 docker exec -i "$SRC" ldapadd -x -H ldap://localhost -D "$ADMIN_DN" -w "$ADMIN_PW" >/dev/null 2>&1 < "$FIX/bootstrap/22-groups.ldif" || load_ok=false
 SRC_PEOPLE=$(ssearch -LLL -x -H ldap://localhost -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(objectClass=inetOrgPerson)" dn 2>/dev/null | grep -c '^dn:' || true)
-if $load_ok && [ "${SRC_PEOPLE:-0}" -ge 11 ]; then
+if $load_ok && [[ "${SRC_PEOPLE:-0}" -ge 11 ]]; then
     pass "loaded $SRC_PEOPLE users + groups into 2.4"
 else
     fail "failed to load source data (people=$SRC_PEOPLE)"
@@ -103,7 +103,7 @@ fi
 echo "[3/$TOTAL] slapcat the 2.4 directory and strip operational attributes"
 docker exec "$SRC" slapcat -o ldif-wrap=no -b "$BASE" 2>/dev/null > "$WORK/dump.ldif" || true
 grep -ivE "^($OPATTRS):" "$WORK/dump.ldif" > "$WORK/data.ldif"
-if [ -s "$WORK/data.ldif" ] && grep -q "^dn: cn=asmith,ou=people,$BASE" "$WORK/data.ldif" \
+if [[ -s "$WORK/data.ldif" ]] && grep -q "^dn: cn=asmith,ou=people,$BASE" "$WORK/data.ldif" \
         && ! grep -qiE "^($OPATTRS):" "$WORK/data.ldif"; then
     pass "exported $(grep -c '^dn:' "$WORK/data.ldif") entries, operational attrs stripped"
 else
@@ -142,7 +142,7 @@ fi
 echo "[5/$TOTAL] All users and group membership migrated intact"
 DST_PEOPLE=$(dsearch -LLL -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "ou=people,$BASE" "(objectClass=inetOrgPerson)" dn 2>/dev/null | grep -c '^dn:' || true)
 NMEMB=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=everyone,ou=groups,$BASE" uniqueMember 2>/dev/null | grep -c '^uniqueMember:' || true)
-if [ "$DST_PEOPLE" = "$SRC_PEOPLE" ] && [ "${NMEMB:-0}" -ge 11 ]; then
+if [[ "$DST_PEOPLE" = "$SRC_PEOPLE" ]] && [[ "${NMEMB:-0}" -ge 11 ]]; then
     pass "people ${SRC_PEOPLE} -> ${DST_PEOPLE}, group membership preserved ($NMEMB)"
 else
     fail "data mismatch (src=$SRC_PEOPLE dst=$DST_PEOPLE members=$NMEMB)"
@@ -151,7 +151,7 @@ fi
 echo "[6/$TOTAL] Attribute fidelity, incl. UTF-8 (Zoë Müller)"
 UNI=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=zmuller,ou=people,$BASE" displayName 2>/dev/null | sed -n 's/^displayName:: //p' | base64 -d 2>/dev/null)
 MAIL=$(dsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$ADMIN_DN" -w "$ADMIN_PW" -b "cn=asmith,ou=people,$BASE" mail 2>/dev/null | sed -n 's/^mail: //p')
-if [ "$UNI" = "Zoë Müller" ] && [ "$MAIL" = "asmith@example.test" ]; then
+if [[ "$UNI" = "Zoë Müller" ]] && [[ "$MAIL" = "asmith@example.test" ]]; then
     pass "attributes and UTF-8 values preserved"
 else
     fail "attribute fidelity lost (unicode='$UNI' mail='$MAIL')"
@@ -176,4 +176,4 @@ fi
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
-[ "$FAIL" -gt 0 ] && exit 1 || exit 0
+[[ "$FAIL" -gt 0 ]] && exit 1 || exit 0
