@@ -1,0 +1,4 @@
+# OpenLDAP versions withdrawn by the packager. The release guard ignores their
+# published images when it looks for the highest version, so main may release a
+# lower version than a withdrawn one. One version per line, a reason after it.
+2.6.15 Symas withdrew the packages on 2026-09-17: slapd heap corruption in syncprov and accesslog (ITS#10591, ITS#10597)

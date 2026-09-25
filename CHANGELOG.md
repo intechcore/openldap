@@ -6,6 +6,15 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
 
+### Changed
+- Back to OpenLDAP 2.6.13. Symas withdrew its 2.6.15 packages on 2026-09-17 after
+  reports of slapd heap corruption with the `syncprov` and `accesslog` overlays
+  (ITS#10591, ITS#10597). The images `2.6.15-1` and `2.6.15-2` stay published but
+  are not recommended; `latest` moves to 2.6.13. Upgrade in place, as within the
+  2.6 line.
+- The release guard ignores versions listed in `.github/withdrawn-versions`, so the
+  image can release 2.6.13 again while 2.6.15 is the highest published tag.
+
 ### Added
 - Line coverage of `entrypoint.sh` and `reload-tls.sh` with kcov. The new
   `sonar` CI job runs the integration and migration tests against the

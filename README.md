@@ -19,6 +19,14 @@ environment variables drive first-boot setup, and the standard data/config
 paths (`/var/lib/ldap`, `/etc/ldap/slapd.d`) are preserved so existing volumes
 keep working.
 
+> **OpenLDAP 2.6.15 withdrawn.** Symas removed its 2.6.15 packages on 2026-09-17
+> after reports of slapd heap corruption with the `syncprov` and `accesslog` overlays
+> ([ITS#10591](https://bugs.openldap.org/show_bug.cgi?id=10591), ITS#10597). This
+> image follows: `2.6.13-4` and later build on 2.6.13 again, and `latest` points
+> there. The images `2.6.15-1` and `2.6.15-2` stay published for existing pins, but
+> move off them, especially if you load `syncprov` or `accesslog` through
+> `/overlays`. The next update is 2.6.16 once Symas publishes it.
+
 ## Quick Start
 
 ```yaml
@@ -316,6 +324,9 @@ image and recreate the container against the existing `*-data` / `*-config`
 volumes, no `slapcat`/`slapadd` dump-and-reload needed. Snapshot the volumes
 first (the `restic` backup). Major upgrades from 2.4/2.5 are a different story,
 see [MIGRATION.md](MIGRATION.md).
+
+Going back within the line works the same way. `2.6.15-x` to `2.6.13-4` is an in-place
+recreate on the same volumes; snapshot them first.
 
 ## Migrating from osixia/openldap
 
