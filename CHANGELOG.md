@@ -7,6 +7,12 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 ## [Unreleased]
 
 ### Changed
+- The weekly rebuild releases for vulnerabilities in Debian packages only, which a rebuild
+  upgrades. A binary copied or downloaded in changes only with a new pinned version, which
+  Renovate brings as an input change. Before, its findings released an unchanged image on every
+  run. They stay in the Trivy issue.
+
+### Changed
 - Back to OpenLDAP 2.6.13. Symas withdrew its 2.6.15 packages on 2026-09-17 after
   reports of slapd heap corruption with the `syncprov` and `accesslog` overlays
   (ITS#10591, ITS#10597). The images `2.6.15-1` and `2.6.15-2` stay published but

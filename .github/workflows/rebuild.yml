@@ -6,8 +6,8 @@ name: Rebuild
 #     moved the Symas packages to a new version)
 #   - the base image digest pinned in FROM differs from the one the image was
 #     built on (Renovate updated the digest after Debian rebuilt the tag)
-#   - Trivy finds fixable CRITICAL or HIGH vulnerabilities in the published
-#     image. Debian ships security fixes as package updates, which change no
+#   - Trivy finds fixable CRITICAL or HIGH vulnerabilities in Debian packages
+#     of the published image. Debian ships security fixes as package updates, which change no
 #     file in git.
 #   - a file that goes into the image changed since the commit the image was
 #     built from (org.opencontainers.image.revision)
@@ -125,12 +125,16 @@ jobs:
             exit 0
           fi
 
+          # Only findings in Debian packages count: the rebuild upgrades those. A
+          # binary copied or downloaded in, such as container-healthcheck or
+          # supercronic, changes only with a new pinned version, which Renovate
+          # brings as an input change. Its findings stay in the Trivy issue.
           # One entry per fixable finding, "CVE in package version (fixed in
           # version)", for the release notes. At most ten are named.
-          findings=$(jq -r '[.Results[]?.Vulnerabilities[]?
+          findings=$(jq -r '[.Results[]? | select(.Class == "os-pkgs") | .Vulnerabilities[]?
             | "\(.VulnerabilityID) in \(.PkgName) \(.InstalledVersion) (fixed in \(.FixedVersion))"] | unique
             | (.[:10] | join(", ")) + (if length > 10 then ", and \(length - 10) more" else "" end)' trivy-results.json)
-          fixable=$(jq '[.Results[]?.Vulnerabilities[]? | .VulnerabilityID + .PkgName] | unique | length' trivy-results.json)
+          fixable=$(jq '[.Results[]? | select(.Class == "os-pkgs") | .Vulnerabilities[]? | .VulnerabilityID + .PkgName] | unique | length' trivy-results.json)
           reasons=()
           if [ -n "$PUBLISHED" ] && [ "$pinned" != "$PUBLISHED" ]; then
             reasons+=("New OpenLDAP version ${pinned}, the published image holds ${PUBLISHED}.")
@@ -139,7 +143,7 @@ jobs:
             reasons+=("Base image ${BASE%@*} rebuilt upstream (digest ${BUILT_ON:-unknown} -> ${UPSTREAM}).")
           fi
           if [ "$fixable" -gt 0 ]; then
-            reasons+=("Fixes ${fixable} CRITICAL/HIGH vulnerabilities found by Trivy: ${findings}.")
+            reasons+=("Fixes ${fixable} CRITICAL/HIGH vulnerabilities in Debian packages found by Trivy: ${findings}.")
           fi
           # INPUTS is a list of paths, split on purpose.
           # shellcheck disable=SC2086
