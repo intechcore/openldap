@@ -287,7 +287,7 @@ The `Rebuild` workflow checks the published `latest` image. It runs every Monday
 
 - The Dockerfile pins a newer OpenLDAP than the `org.opencontainers.image.version` label of the published image. A merged Renovate update releases without a manual step.
 - The base image digest pinned in `FROM` differs from the `org.opencontainers.image.base.digest` label of the published image.
-- Trivy finds fixable CRITICAL or HIGH vulnerabilities in the published image.
+- Trivy finds fixable CRITICAL or HIGH vulnerabilities in Debian packages of the published image. A binary copied or downloaded in changes only with a new pinned version, which Renovate brings as an input change.
 - A file that goes into the image changed since the commit in the `org.opencontainers.image.revision` label of the published image.
 
 It never releases an OpenLDAP lower than the published one. One check and release runs at a time, so a burst of pushes never publishes the same change twice.
