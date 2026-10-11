@@ -142,6 +142,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   and the docs use no em-dashes.
 
 ### Fixed
+- The release notes compare a release with the last release before it, not with the highest
+  version tag. While the withdrawn `2.6.15-2` was the highest tag, every 2.6.13 release said
+  it moved OpenLDAP from 2.6.15 to 2.6.13, repeated earlier changelog entries and listed its
+  commits from `v2.6.15-2`.
 - The TLS examples set `LDAP_TLS_VERIFY_CLIENT: "never"`. Its default, `demand`, is mutual TLS,
   so a copied example refused every client without a client certificate. The README says so
   next to the variable.
