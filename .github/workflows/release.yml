@@ -295,7 +295,9 @@ jobs:
           BASE_IMAGE: ${{ needs.prepare.outputs.base_image }}
           BASE_DIGEST: ${{ needs.prepare.outputs.base_digest }}
         run: |
-          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | head -1)
+          # The last release before this commit, not the highest version: a
+          # withdrawn higher version must not stay the base of every later note.
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA" 2>/dev/null || true)
           symas=$(awk -F= '$1 == "ARG SYMAS_VERSION" { print $2; exit }' Dockerfile)
           PREV_TAG="$PREV_TAG" PRODUCT=OpenLDAP .github/scripts/release-notes.sh \
             "OpenLDAP=${VERSION}" \
