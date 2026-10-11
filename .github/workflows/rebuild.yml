@@ -87,7 +87,13 @@ jobs:
         id: upstream
         run: |
           base=$(awk '$1 == "FROM" { print $2; exit }' Dockerfile)
+          # Without pipefail, a failed inspect leaves jq nothing to read and an empty
+          # digest, which the decision would take for a rebuilt base and release.
           digest=$(docker buildx imagetools inspect "$base" --format '{{json .Manifest}}' | jq -r .digest)
+          if [ -z "$digest" ] || [ "$digest" = null ]; then
+            echo "::error::Cannot resolve the digest of $base"
+            exit 1
+          fi
           {
             echo "image=$base"
             echo "digest=$digest"

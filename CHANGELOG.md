@@ -138,6 +138,9 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   and the docs use no em-dashes.
 
 ### Fixed
+- The weekly rebuild stops when it cannot resolve the digest of the base image. Without
+  `pipefail`, a failed lookup gave an empty digest, which the rebuild took for a rebuilt base
+  and released an unchanged image.
 - The release notes compare a release with the last release before it, not with the highest
   version tag. While the withdrawn `2.6.15-2` was the highest tag, every 2.6.13 release said
   it moved OpenLDAP from 2.6.15 to 2.6.13, repeated earlier changelog entries and listed its
