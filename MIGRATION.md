@@ -19,7 +19,7 @@ The variables you already use are supported as-is:
 | `LDAP_TLS`, `LDAP_TLS_*` | ✅ | |
 | `LDAP_TLS_VERIFY_CLIENT` | ✅ | |
 | `LDAP_LOG_LEVEL` | ✅ | |
-| `LDAP_RFC2307BIS_SCHEMA` | ⚠️ | not auto-handled, load via `/schema` if needed |
+| `LDAP_RFC2307BIS_SCHEMA` | ⚠️ | renamed: set `LDAP_RFC2307BIS=true`, which loads `rfc2307bis` in place of `nis` |
 
 Certificates: osixia mounted them at
 `/container/service/slapd/assets/certs`. This image uses `/container/certs`.
