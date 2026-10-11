@@ -6,21 +6,6 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
 
-### Changed
-- The weekly rebuild releases for vulnerabilities in Debian packages only, which a rebuild
-  upgrades. A binary copied or downloaded in changes only with a new pinned version, which
-  Renovate brings as an input change. Before, its findings released an unchanged image on every
-  run. They stay in the Trivy issue.
-
-### Changed
-- Back to OpenLDAP 2.6.13. Symas withdrew its 2.6.15 packages on 2026-09-17 after
-  reports of slapd heap corruption with the `syncprov` and `accesslog` overlays
-  (ITS#10591, ITS#10597). The images `2.6.15-1` and `2.6.15-2` stay published but
-  are not recommended; `latest` moves to 2.6.13. Upgrade in place, as within the
-  2.6 line.
-- The release guard ignores versions listed in `.github/withdrawn-versions`, so the
-  image can release 2.6.13 again while 2.6.15 is the highest published tag.
-
 ### Added
 - Line coverage of `entrypoint.sh` and `reload-tls.sh` with kcov. The new
   `sonar` CI job runs the integration and migration tests against the
@@ -104,6 +89,17 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 - `MIGRATION.md` with the slapcat → strip → reimport recipe from osixia.
 
 ### Changed
+- The weekly rebuild releases for vulnerabilities in Debian packages only, which a rebuild
+  upgrades. A binary copied or downloaded in changes only with a new pinned version, which
+  Renovate brings as an input change. Before, its findings released an unchanged image on every
+  run. They stay in the Trivy issue.
+- Back to OpenLDAP 2.6.13. Symas withdrew its 2.6.15 packages on 2026-09-17 after
+  reports of slapd heap corruption with the `syncprov` and `accesslog` overlays
+  (ITS#10591, ITS#10597). The images `2.6.15-1` and `2.6.15-2` stay published but
+  are not recommended; `latest` moves to 2.6.13. Upgrade in place, as within the
+  2.6 line.
+- The release guard ignores versions listed in `.github/withdrawn-versions`, so the
+  image can release 2.6.13 again while 2.6.15 is the highest published tag.
 - Releases are automatic. The Rebuild workflow also runs on each push to `main` that changes
   `Dockerfile`, `entrypoint.sh`, `reload-tls.sh` or `schema/`. It releases a newer pinned
   OpenLDAP, and a change of those files since the commit of the published image. A merged
@@ -163,3 +159,4 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   attaches to an existing tag. A deleted package or release can no longer free a number.
 - A release fails when the package API cannot list the published tags, instead of counting from
   an empty list.
+
