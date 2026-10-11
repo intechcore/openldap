@@ -297,7 +297,13 @@ jobs:
         run: |
           # The last release before this commit, not the highest version: a
           # withdrawn higher version must not stay the base of every later note.
-          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA" 2>/dev/null || true)
+          # The nearest tagged commit in the history, and of its tags the highest,
+          # since a rebuild tags the same commit again. git describe would pick
+          # any of them. awk takes the first line with a tag, whatever else git
+          # decorates, and reads to the end, so the pipe of git log never breaks.
+          PREV_TAG=$(git log --format=%D --decorate-refs='refs/tags/v*' "$GITHUB_SHA" |
+            awk '/tag: / && !found { found = NR } NR == found' | tr ',' '\n' |
+            sed -n -E 's/^ *tag: (v[^ ]+)$/\1/p' | sort -V | tail -1)
           symas=$(awk -F= '$1 == "ARG SYMAS_VERSION" { print $2; exit }' Dockerfile)
           PREV_TAG="$PREV_TAG" PRODUCT=OpenLDAP .github/scripts/release-notes.sh \
             "OpenLDAP=${VERSION}" \
