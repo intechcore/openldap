@@ -146,6 +146,13 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   version tag. While the withdrawn `2.6.15-2` was the highest tag, every 2.6.13 release said
   it moved OpenLDAP from 2.6.15 to 2.6.13, repeated earlier changelog entries and listed its
   commits from `v2.6.15-2`.
+- The TLS examples set `LDAP_TLS_VERIFY_CLIENT: "never"`. Its default, `demand`, is mutual TLS,
+  so a copied example refused every client without a client certificate. The README says so
+  next to the variable.
+- The examples pin `2.6.13-6`, no longer the withdrawn `2.6.15-2`, and Renovate no longer moves
+  the image pin onto a withdrawn version.
+- `MIGRATION.md` says that `LDAP_RFC2307BIS_SCHEMA` is renamed to `LDAP_RFC2307BIS`, rather
+  than not handled.
 - The Rebuild workflow never started since releases are signed: it called the release without
   the `id-token` and `attestations` permissions the release needs. It grants them now.
 - A release counts the git tags as taken build numbers, next to the package tags, and never

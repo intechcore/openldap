@@ -69,11 +69,18 @@
       "allowedVersions": "/^2\\.6\\./"
     },
     {
-      "description": "Own image on ghcr.io. Every release publishes the exact build tag (2.6.15-2) next to the moving tag (2.6.15) and latest. Regex versioning tracks only the exact one and orders by the build number. Docker versioning would read -N as a compatibility tag and hide rebuilds.",
+      "description": "Own image on ghcr.io. Every release publishes the exact build tag (2.6.13-6) next to the moving tag (2.6.13) and latest. Regex versioning tracks only the exact one and orders by the build number. Docker versioning would read -N as a compatibility tag and hide rebuilds.",
       "matchPackageNames": [
         "ghcr.io/intechcore/openldap"
       ],
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)$"
+    },
+    {
+      "description": "Never move a pin onto a withdrawn OpenLDAP version: they rank above the current one, and Renovate would keep pinning them. Keep in step with .github/withdrawn-versions.",
+      "matchPackageNames": [
+        "ghcr.io/intechcore/openldap"
+      ],
+      "allowedVersions": "!/^2\\.6\\.15-/"
     }
   ]
 }

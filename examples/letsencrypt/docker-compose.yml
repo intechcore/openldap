@@ -31,7 +31,7 @@ services:
           done'
 
   openldap:
-    image: ghcr.io/intechcore/openldap:2.6.15-2
+    image: ghcr.io/intechcore/openldap:2.6.13-6
     container_name: openldap
     restart: unless-stopped
     depends_on: [certbot]
@@ -41,6 +41,10 @@ services:
       LDAP_ADMIN_PASSWORD: "change-me"
       LDAP_CONFIG_PASSWORD: "change-me-too"
       LDAP_TLS: "true"
+      # No client certificates: the CA here is the Let's Encrypt intermediate,
+      # which no client certificate can match. The default, demand, would refuse
+      # every client.
+      LDAP_TLS_VERIFY_CLIENT: "never"
       # The deploy hook writes the cert into /container/certs (the default
       # CERTS_DIR) under Let's Encrypt's filenames.
       LDAP_TLS_CRT_FILENAME: "fullchain.pem"
