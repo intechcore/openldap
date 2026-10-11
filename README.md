@@ -34,7 +34,7 @@ keep working.
 services:
   openldap:
     # renovate: image=ghcr.io/intechcore/openldap
-    image: ghcr.io/intechcore/openldap:2.6.15-2
+    image: ghcr.io/intechcore/openldap:2.6.13-6
     environment:
       LDAP_ORGANISATION: "Example Inc."
       LDAP_DOMAIN: "example.org"
@@ -43,6 +43,7 @@ services:
       LDAP_READONLY_USER: "true"
       LDAP_READONLY_USER_PASSWORD: "readonly-pw"
       LDAP_TLS: "true"
+      LDAP_TLS_VERIFY_CLIENT: "never"        # the default, demand, is mutual TLS
       TZ: "Europe/Berlin"
     ports:
       - "389:389"
@@ -104,7 +105,7 @@ starts reuse the persisted `cn=config`.
 | `LDAP_TLS_KEY_FILENAME` | `ldap.key` | Key filename |
 | `LDAP_TLS_CA_CRT_FILENAME` | `ca.crt` | CA cert filename |
 | `LDAP_TLS_DH_PARAM_FILENAME` | `dhparam.pem` | DH params filename |
-| `LDAP_TLS_VERIFY_CLIENT` | `demand` | `never`/`allow`/`try`/`demand` |
+| `LDAP_TLS_VERIFY_CLIENT` | `demand` | `never`/`allow`/`try`/`demand`. The default `demand` is mutual TLS: slapd refuses a client without a certificate signed by the CA. Set `never` for ordinary clients |
 | `LDAP_TLS_PROTOCOL_MIN` | `3.3` | Minimum TLS version (`3.3`=1.2, `3.4`=1.3) |
 | `LDAP_TLS_CIPHER_SUITE` | _(OpenSSL default)_ | OpenSSL cipher string |
 | `LDAP_TLS_WATCH` | `false` | Watch the cert file and hot-reload slapd on renewal |
@@ -267,14 +268,14 @@ Each release carries signed attestations. The build provenance proves which work
 repository built the image, and from which commit:
 
 ```sh
-gh attestation verify oci://ghcr.io/intechcore/openldap:2.6.15-2 --owner intechcore
+gh attestation verify oci://ghcr.io/intechcore/openldap:2.6.13-6 --owner intechcore
 ```
 
 The SBOM (SPDX) lists the packages in the image. It belongs to the image of one platform, so
 check it on the digest of that platform, from `docker buildx imagetools inspect`:
 
 ```sh
-docker buildx imagetools inspect ghcr.io/intechcore/openldap:2.6.15-2
+docker buildx imagetools inspect ghcr.io/intechcore/openldap:2.6.13-6
 gh attestation verify oci://ghcr.io/intechcore/openldap@sha256:<platform digest> \
   --owner intechcore --predicate-type https://spdx.dev/Document/v2.3
 ```
