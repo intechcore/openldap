@@ -6,12 +6,6 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
 
-### Fixed
-- The release notes compare a release with the last release before it, not with the highest
-  version tag. While the withdrawn `2.6.15-2` was the highest tag, every 2.6.13 release said
-  it moved OpenLDAP from 2.6.15 to 2.6.13, repeated earlier changelog entries and listed its
-  commits from `v2.6.15-2`.
-
 ### Changed
 - The weekly rebuild releases for vulnerabilities in Debian packages only, which a rebuild
   upgrades. A binary copied or downloaded in changes only with a new pinned version, which
@@ -148,6 +142,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   and the docs use no em-dashes.
 
 ### Fixed
+- The release notes compare a release with the last release before it, not with the highest
+  version tag. While the withdrawn `2.6.15-2` was the highest tag, every 2.6.13 release said
+  it moved OpenLDAP from 2.6.15 to 2.6.13, repeated earlier changelog entries and listed its
+  commits from `v2.6.15-2`.
 - The Rebuild workflow never started since releases are signed: it called the release without
   the `id-token` and `attestations` permissions the release needs. It grants them now.
 - A release counts the git tags as taken build numbers, next to the package tags, and never
