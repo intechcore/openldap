@@ -31,7 +31,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=77
+TOTAL=78
 
 # Standalone containers spun up by the configuration-variant tests.
 # Opt-in coverage mode, used by tests/coverage.sh: COVERAGE_DIR is a host
@@ -1237,6 +1237,38 @@ if $UA_OK && $UA_FIRST && $UA_DUP_NUM && $UA_DUP_MAIL; then
     pass "duplicate employeeNumber rejected, duplicate mail accepted"
 else
     fail "unique attribute list wrong (ready=$UA_OK first=$UA_FIRST dupNumRejected=$UA_DUP_NUM dupMailAccepted=$UA_DUP_MAIL)"
+fi
+
+echo "[78/$TOTAL] The Let's Encrypt deploy hook publishes the key first and the certificate last"
+# The hook runs as root, as in the certbot container, into a tmpfs, where the
+# owner it sets holds on every Docker host. A wrapper around mv logs
+# each file it moves into place: the watcher polls the certificate, so the key
+# has to be in place before it, and each file has to appear whole, by a rename.
+DH=$(mktemp -d)
+mkdir -p "$DH/live/example.test" "$DH/bin" "$DH/log"
+for f in fullchain chain privkey; do echo "$f content" > "$DH/live/example.test/$f.pem"; done
+cat > "$DH/bin/mv" <<'MV'
+#!/bin/sh
+for a; do last=$a; done
+basename "$last" >> /log/mv.log
+exec /bin/mv "$@"
+MV
+chmod 755 "$DH/bin/mv"
+DH_STAT=$(docker run --rm --user 0 --entrypoint sh \
+    -v "$DH/live:/live:ro" --tmpfs /certs -v "$DH/bin:/fakebin:ro" -v "$DH/log:/log" \
+    -v "$SCRIPT_DIR/../../examples/letsencrypt/deploy-hook.sh:/deploy-hook.sh:ro" \
+    -e RENEWED_LINEAGE=/live/example.test -e PATH="/fakebin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    "$IMAGE" -c 'sh /deploy-hook.sh >/dev/null && cd /certs && stat -c "%n %a %u:%g" fullchain.pem chain.pem privkey.pem && ls -A | tr "\n" " " && cat privkey.pem' 2>&1 || true)
+DH_ORDER=$({ tr '\n' ' ' < "$DH/log/mv.log"; } 2>/dev/null || true)
+rm -rf "$DH"
+if [[ "$DH_ORDER" == "privkey.pem chain.pem fullchain.pem " ]] \
+    && echo "$DH_STAT" | grep -qx "privkey.pem 640 0:999" \
+    && echo "$DH_STAT" | grep -qx "fullchain.pem 644 0:0" \
+    && echo "$DH_STAT" | grep -qx "chain.pem 644 0:0" \
+    && echo "$DH_STAT" | grep -q "^chain.pem fullchain.pem privkey.pem privkey content$"; then
+    pass "key, chain, certificate renamed into place in that order, with their permissions"
+else
+    fail "deploy hook publishing wrong (order='$DH_ORDER' result='$(echo "$DH_STAT" | tr '\n' '|')')"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
