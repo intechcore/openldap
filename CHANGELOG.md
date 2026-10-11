@@ -153,6 +153,10 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
   the image pin onto a withdrawn version.
 - `MIGRATION.md` says that `LDAP_RFC2307BIS_SCHEMA` is renamed to `LDAP_RFC2307BIS`, rather
   than not handled.
+- The Let's Encrypt deploy hook publishes the key first and the certificate last, each staged
+  with its permissions and renamed into place. It copied the certificate first, in place: the
+  watcher could reload the new certificate with the old key, or read a partly written file, and
+  a first key was readable by others until its `chmod`. Integration test 78 checks the order.
 - The Rebuild workflow never started since releases are signed: it called the release without
   the `id-token` and `attestations` permissions the release needs. It grants them now.
 - A release counts the git tags as taken build numbers, next to the package tags, and never
