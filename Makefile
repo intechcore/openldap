@@ -12,7 +12,7 @@ IMAGE_TAG        ?= $(OPENLDAP_VERSION)
 # renovate: datasource=docker depName=hadolint/hadolint
 HADOLINT_IMAGE   ?= hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
 # renovate: datasource=docker depName=aquasec/trivy
-TRIVY_IMAGE      ?= aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+TRIVY_IMAGE      ?= aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
 
 build:
 	docker build \
