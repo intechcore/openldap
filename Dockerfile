@@ -13,8 +13,8 @@ FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20b
 # Upstream OpenLDAP version (used for tags/labels) and the exact Symas apt
 # package revision to install (pinned for reproducible builds).
 # renovate: openldap
-ARG OPENLDAP_VERSION=2.6.13
-ARG SYMAS_VERSION=2.6.13-3trixie1
+ARG OPENLDAP_VERSION=2.6.16
+ARG SYMAS_VERSION=2.6.16-1trixie1
 
 LABEL org.opencontainers.image.title="openldap" \
       org.opencontainers.image.description="OpenLDAP 2.6 LTS directory server from the official Symas packages on Debian 13 — self-maintained replacement for osixia/openldap" \
