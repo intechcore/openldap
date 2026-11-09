@@ -34,7 +34,7 @@ keep working.
 services:
   openldap:
     # renovate: image=ghcr.io/intechcore/openldap
-    image: ghcr.io/intechcore/openldap:2.6.16-3
+    image: ghcr.io/intechcore/openldap:2.6.16-4
     environment:
       LDAP_ORGANISATION: "Example Inc."
       LDAP_DOMAIN: "example.org"
