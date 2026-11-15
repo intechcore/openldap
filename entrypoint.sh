@@ -25,6 +25,9 @@ LDAP_READONLY_USER_PASSWORD="${LDAP_READONLY_USER_PASSWORD:-readonly}"
 LDAP_READONLY_PW_USER="${LDAP_READONLY_PW_USER:-false}"
 LDAP_READONLY_PW_USERNAME="${LDAP_READONLY_PW_USERNAME:-readpw}"
 LDAP_READONLY_PW_PASSWORD="${LDAP_READONLY_PW_PASSWORD:-readpw}"
+# Service account with scoped write access, created by ldap-service-user on
+# first boot. The LDAP_SERVICE_USER_* variables are read by that command.
+LDAP_SERVICE_USER="${LDAP_SERVICE_USER:-false}"
 # Overlays enabled by default for osixia parity. memberof maintains the reverse
 # memberOf attribute; refint keeps DN references consistent on delete/rename.
 # Both are configured exactly as osixia did (groupOfUniqueNames / uniqueMember).
@@ -449,6 +452,14 @@ EOF
         ldapadd -c -x -H "$boot_ldapi" -D "cn=admin,$LDAP_BASE_DN" -w "$LDAP_ADMIN_PASSWORD" -f "$f" >/dev/null 2>&1 \
             || log "  (some entries in $f already existed and were skipped)"
     done
+
+    # Service account and its ACL rules. Runs after the data so the rules land
+    # in front of the default ones, exactly as on a running server.
+    if [ "$LDAP_SERVICE_USER" = "true" ]; then
+        LDAPI_URL="$boot_ldapi" LDAP_ADMIN_PASSWORD="$LDAP_ADMIN_PASSWORD" \
+            LDAP_CONFIG_PASSWORD="$LDAP_CONFIG_PASSWORD" ldap-service-user \
+            || { log "ERROR: cannot set up the service user"; exit 1; }
+    fi
 
     log "Stopping temporary slapd"
     pid="$(cat /run/slapd/slapd.pid 2>/dev/null || true)"

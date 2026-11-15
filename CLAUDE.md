@@ -28,6 +28,11 @@ See the "Where the binaries come from" section in README.md.
   ldapmodify) and `/bootstrap` LDIF cover the rest. Idempotent across restarts
   (only bootstraps when the config volume is empty). Also hosts the opt-in TLS
   cert watcher (`LDAP_TLS_WATCH`).
+- `service-user.sh` → `/usr/local/bin/ldap-service-user` creates, updates or
+  removes the scoped service account (`LDAP_SERVICE_USER*`) and its ACL rules.
+  The entrypoint runs it on first boot; on a running server run it with
+  `docker exec`. Its rules go in front of the others, end with `by * break` and
+  are found again by the account DN, so a rerun replaces only them.
 - `reload-tls.sh` → `/usr/local/bin/reload-tls` re-reads slapd's TLS material
   without a restart by re-asserting `olcTLS*` in `cn=config` (for renewals).
 - `schema/`: custom schemas baked into the image at `/schema`.
@@ -64,7 +69,8 @@ See the "Where the binaries come from" section in README.md.
   repository paths) and `<out dir>/html/`. CI writes to `build/`, which
   `sonar-project.properties` reads.
 - In the `coverage` stage, `/bin/sh` is bash (kcov traces bash only), and
-  `tests/coverage/kcov-run.sh` replaces `docker-entrypoint.sh` and `reload-tls`.
+  `tests/coverage/kcov-run.sh` replaces `docker-entrypoint.sh`, `reload-tls` and
+  `ldap-service-user`.
   It runs the original from `/opt/coverage/` under kcov, one directory per
   process below `/cov`. `stdbuf -oL` is required: kcov relays the script output
   through a pipe and would hold the log lines back.

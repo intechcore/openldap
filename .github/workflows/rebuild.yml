@@ -25,6 +25,7 @@ on:
       - Dockerfile
       - entrypoint.sh
       - reload-tls.sh
+      - service-user.sh
       - 'schema/**'
       - .github/workflows/rebuild.yml
   workflow_dispatch:
@@ -119,7 +120,7 @@ jobs:
           REVISION: ${{ steps.published.outputs.revision }}
           # The files that go into the image. Keep the list in sync with the
           # push paths above.
-          INPUTS: Dockerfile entrypoint.sh reload-tls.sh schema
+          INPUTS: Dockerfile entrypoint.sh reload-tls.sh service-user.sh schema
         run: |
           # A rebuild never publishes an older OpenLDAP than the latest image.
           # main can pin a lower version when Symas withdraws packages.
