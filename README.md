@@ -182,6 +182,9 @@ The default ACLs match osixia's restrictive model:
 
 - `userPassword`: self can change it, anonymous may use it to authenticate
   (bind), nobody can read the hash.
+- `pwdHistory`: nobody can read it. ppolicy keeps the hashes of the previous
+  passwords there and checks them internally. On a server bootstrapped by an
+  older image, run `docker exec <container> ldap-hide-pwdhistory` once.
 - Everything else: a user reads **only its own entry**; the optional readonly
   account (`LDAP_READONLY_USER`) reads the whole tree; everyone else is denied.
 
@@ -270,7 +273,7 @@ make bump-openldap V=2.6.14      # bump version + resolve Symas package revision
 
 ### Test coverage
 
-`make coverage` measures the line coverage of `entrypoint.sh`, `reload-tls.sh` and `service-user.sh`.
+`make coverage` measures the line coverage of `entrypoint.sh`, `reload-tls.sh`, `service-user.sh` and `hide-pwdhistory.sh`.
 It builds the `coverage` stage of the Dockerfile, which runs both scripts under
 [kcov](https://github.com/SimonKagstrom/kcov). Then it runs the integration and
 migration tests against that image and merges the results of all containers:
@@ -324,7 +327,7 @@ gh attestation verify oci://ghcr.io/intechcore/openldap@sha256:<platform digest>
 
 Every input change on `main` releases by itself. Renovate proposes a new Symas OpenLDAP package and a new digest of `debian:trixie-slim`. Debian also ships security fixes as package updates, which change no file in git.
 
-The `Rebuild` workflow checks the published `latest` image. It runs every Monday, and on each push to `main` that changes `Dockerfile`, `entrypoint.sh`, `reload-tls.sh`, `service-user.sh` or `schema/`. It releases the next build (`2.6.13-4 → 2.6.13-5`, the first build of a new OpenLDAP gets `-1`) in these cases:
+The `Rebuild` workflow checks the published `latest` image. It runs every Monday, and on each push to `main` that changes `Dockerfile`, `entrypoint.sh`, `reload-tls.sh`, `service-user.sh`, `hide-pwdhistory.sh` or `schema/`. It releases the next build (`2.6.13-4 → 2.6.13-5`, the first build of a new OpenLDAP gets `-1`) in these cases:
 
 - The Dockerfile pins a newer OpenLDAP than the `org.opencontainers.image.version` label of the published image. A merged Renovate update releases without a manual step.
 - The base image digest pinned in `FROM` differs from the `org.opencontainers.image.base.digest` label of the published image.

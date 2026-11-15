@@ -78,7 +78,9 @@ RUN mkdir -p /container/certs /schema /overlays /bootstrap /run/slapd \
 COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY reload-tls.sh /usr/local/bin/reload-tls
 COPY service-user.sh /usr/local/bin/ldap-service-user
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/reload-tls /usr/local/bin/ldap-service-user
+COPY hide-pwdhistory.sh /usr/local/bin/ldap-hide-pwdhistory
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/reload-tls /usr/local/bin/ldap-service-user \
+    /usr/local/bin/ldap-hide-pwdhistory
 
 # Custom schemas baked into the image (also overridable by mounting /schema).
 COPY schema/ /schema/
@@ -108,10 +110,12 @@ RUN apt-get update && \
     mkdir -m 1777 /cov && \
     mv /usr/local/bin/docker-entrypoint.sh /opt/coverage/entrypoint.sh && \
     mv /usr/local/bin/reload-tls /opt/coverage/reload-tls.sh && \
-    mv /usr/local/bin/ldap-service-user /opt/coverage/service-user.sh
+    mv /usr/local/bin/ldap-service-user /opt/coverage/service-user.sh && \
+    mv /usr/local/bin/ldap-hide-pwdhistory /opt/coverage/hide-pwdhistory.sh
 COPY --chmod=0755 tests/coverage/kcov-run.sh /usr/local/bin/docker-entrypoint.sh
 COPY --chmod=0755 tests/coverage/kcov-run.sh /usr/local/bin/reload-tls
 COPY --chmod=0755 tests/coverage/kcov-run.sh /usr/local/bin/ldap-service-user
+COPY --chmod=0755 tests/coverage/kcov-run.sh /usr/local/bin/ldap-hide-pwdhistory
 
 # The published image. Keep this stage last: the release builds the default
 # target.

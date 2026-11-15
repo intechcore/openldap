@@ -6,6 +6,12 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 
 ## [Unreleased]
 
+### Security
+- Nobody but the rootdn reads `pwdHistory` any more. The default ACLs exposed
+  the hashes of the previous passwords to the readonly accounts. New servers
+  get the rule on first boot; on a running server run `ldap-hide-pwdhistory`
+  once. ppolicy still rejects a password from the history.
+
 ### Added
 - Service account with scoped write access, `LDAP_SERVICE_USER` and the
   `LDAP_SERVICE_USER_*` variables. It reads the tree like the readonly account

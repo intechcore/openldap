@@ -33,6 +33,9 @@ See the "Where the binaries come from" section in README.md.
   The entrypoint runs it on first boot; on a running server run it with
   `docker exec`. Its rules go in front of the others, end with `by * break` and
   are found again by the account DN, so a rerun replaces only them.
+- `hide-pwdhistory.sh` → `/usr/local/bin/ldap-hide-pwdhistory` adds the rule
+  `to attrs=pwdHistory by * none` in front of the others on a running server,
+  once. New servers get it on first boot from the default ACLs.
 - `reload-tls.sh` → `/usr/local/bin/reload-tls` re-reads slapd's TLS material
   without a restart by re-asserting `olcTLS*` in `cn=config` (for renewals).
 - `schema/`: custom schemas baked into the image at `/schema`.
@@ -69,8 +72,8 @@ See the "Where the binaries come from" section in README.md.
   repository paths) and `<out dir>/html/`. CI writes to `build/`, which
   `sonar-project.properties` reads.
 - In the `coverage` stage, `/bin/sh` is bash (kcov traces bash only), and
-  `tests/coverage/kcov-run.sh` replaces `docker-entrypoint.sh`, `reload-tls` and
-  `ldap-service-user`.
+  `tests/coverage/kcov-run.sh` replaces `docker-entrypoint.sh` and the commands
+  of the image.
   It runs the original from `/opt/coverage/` under kcov, one directory per
   process below `/cov`. `stdbuf -oL` is required: kcov relays the script output
   through a pipe and would hold the log lines back.
@@ -120,7 +123,8 @@ See the "Where the binaries come from" section in README.md.
   (`LDAP_TLS_PROTOCOL_MIN`/`LDAP_TLS_CIPHER_SUITE`). Stack is OpenSSL (not
   GnuTLS like osixia), so cipher strings use OpenSSL syntax.
 - Default ACLs follow osixia's restrictive model: user reads only its own entry,
-  `userPassword` not readable, readonly account reads the tree, rootdn bypasses.
+  `userPassword` and `pwdHistory` not readable, readonly account reads the tree,
+  rootdn bypasses.
   Two readonly service accounts: `LDAP_READONLY_USER` (no `userPassword`) and the
   optional `LDAP_READONLY_PW_USER` (also reads hashes, for local password
   verification). The pw-reader's read clause is injected into the generated ACLs
