@@ -93,6 +93,13 @@ starts reuse the persisted `cn=config`.
 | `LDAP_READONLY_PW_USER` | `false` | Create a 2nd read-only account that **can** read `userPassword` |
 | `LDAP_READONLY_PW_USERNAME` | `readpw` | Password-reading account CN |
 | `LDAP_READONLY_PW_PASSWORD` | `readpw` | Password-reading account password |
+| `LDAP_SERVICE_USER` | `false` | Create a service account with scoped write access, see [Service account](#service-account) |
+| `LDAP_SERVICE_USER_USERNAME` | `service` | Service account CN |
+| `LDAP_SERVICE_USER_PASSWORD` | `service` | Service account password |
+| `LDAP_SERVICE_USER_SUBTREE` | `ou=people` | Subtree below the base DN where the account may write attributes |
+| `LDAP_SERVICE_USER_MANAGE_ATTRS` | empty | Attributes with `manage` access in the subtree, e.g. `userPassword pwdAccountLockedTime` |
+| `LDAP_SERVICE_USER_WRITE_ATTRS` | empty | Attributes with `write` access in the subtree, e.g. `preferredLanguage` |
+| `LDAP_SERVICE_USER_GROUPS` | empty | Groups below the base DN whose `uniqueMember` the account may change, e.g. `cn=expired,ou=groups` |
 | `LDAP_MEMBEROF` | `true` | Enable the memberof overlay (reverse `memberOf`) |
 | `LDAP_REFINT` | `true` | Enable the refint overlay (referential integrity) |
 | `LDAP_LASTBIND` | `false` | Enable the lastbind overlay (`authTimestamp` last-login) |
@@ -184,6 +191,39 @@ authenticate via an LDAP bind), while `LDAP_READONLY_PW_USER` additionally reads
 `userPassword`, only for services that verify passwords by reading the hash
 locally (e.g. some Dovecot/Postfix setups). Both are read-only (no writes).
 
+### Service account
+
+`LDAP_SERVICE_USER` creates `cn=<LDAP_SERVICE_USER_USERNAME>,<base>` for an
+application that must change a few attributes, so it does not need the rootdn.
+The account reads the whole tree like the readonly account, never the password
+hashes, and writes only what the other variables grant:
+
+- `manage` on `LDAP_SERVICE_USER_MANAGE_ATTRS` in `LDAP_SERVICE_USER_SUBTREE`.
+  `pwdAccountLockedTime` needs `manage`, since ppolicy maintains it.
+  `userPassword` gets the privileges `=mw` instead, without read: the account
+  sets passwords but never reads a hash. For ppolicy such a password is an
+  administrative reset, the same as a reset by the rootdn: no history or
+  quality check.
+- `write` on `LDAP_SERVICE_USER_WRITE_ATTRS` in the same subtree, `=w` for
+  `userPassword`. Then ppolicy checks the password like a change by the user.
+- `write` on `uniqueMember` of each group in `LDAP_SERVICE_USER_GROUPS`.
+
+It cannot add, delete or rename entries, change other attributes, or touch
+entries outside the subtree, such as the readonly account.
+
+The rules go in front of the default ones and end with `by * break`, so every
+other client keeps its access. `ldap-service-user` writes them on first boot.
+On a running server, also one bootstrapped without the account, set the
+variables and run it:
+
+```bash
+docker exec <container> ldap-service-user
+```
+
+A rerun updates the password and replaces the rules of the account, found by
+its DN. Other rules stay as they are. With `LDAP_SERVICE_USER=false` it removes
+the rules and the account.
+
 The `cn=admin,<base>` rootdn bypasses ACLs for administration. Tighten or widen
 by mounting your own `cn=config` ACL LDIF into `/overlays`.
 
@@ -230,7 +270,7 @@ make bump-openldap V=2.6.14      # bump version + resolve Symas package revision
 
 ### Test coverage
 
-`make coverage` measures the line coverage of `entrypoint.sh` and `reload-tls.sh`.
+`make coverage` measures the line coverage of `entrypoint.sh`, `reload-tls.sh` and `service-user.sh`.
 It builds the `coverage` stage of the Dockerfile, which runs both scripts under
 [kcov](https://github.com/SimonKagstrom/kcov). Then it runs the integration and
 migration tests against that image and merges the results of all containers:
@@ -284,7 +324,7 @@ gh attestation verify oci://ghcr.io/intechcore/openldap@sha256:<platform digest>
 
 Every input change on `main` releases by itself. Renovate proposes a new Symas OpenLDAP package and a new digest of `debian:trixie-slim`. Debian also ships security fixes as package updates, which change no file in git.
 
-The `Rebuild` workflow checks the published `latest` image. It runs every Monday, and on each push to `main` that changes `Dockerfile`, `entrypoint.sh`, `reload-tls.sh` or `schema/`. It releases the next build (`2.6.13-4 → 2.6.13-5`, the first build of a new OpenLDAP gets `-1`) in these cases:
+The `Rebuild` workflow checks the published `latest` image. It runs every Monday, and on each push to `main` that changes `Dockerfile`, `entrypoint.sh`, `reload-tls.sh`, `service-user.sh` or `schema/`. It releases the next build (`2.6.13-4 → 2.6.13-5`, the first build of a new OpenLDAP gets `-1`) in these cases:
 
 - The Dockerfile pins a newer OpenLDAP than the `org.opencontainers.image.version` label of the published image. A merged Renovate update releases without a manual step.
 - The base image digest pinned in `FROM` differs from the `org.opencontainers.image.base.digest` label of the published image.

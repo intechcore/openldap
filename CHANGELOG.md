@@ -7,6 +7,13 @@ after the bundled OpenLDAP release with a build suffix (e.g. `2.6.13-1`).
 ## [Unreleased]
 
 ### Added
+- Service account with scoped write access, `LDAP_SERVICE_USER` and the
+  `LDAP_SERVICE_USER_*` variables. It reads the tree like the readonly account
+  and writes only the granted attributes in one subtree and the members of the
+  listed groups, so an application no longer needs the rootdn. A password it
+  sets is an administrative reset for ppolicy, and it never reads a hash. The
+  new `ldap-service-user` command adds, updates or removes the account and its
+  rules on a running server, without touching the other rules.
 - Line coverage of `entrypoint.sh` and `reload-tls.sh` with kcov. The new
   `sonar` CI job runs the integration and migration tests against the
   `coverage` stage of the Dockerfile and sends the report to SonarCloud. The

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Measures the line coverage of entrypoint.sh and reload-tls.sh. Runs the
+# Measures the line coverage of entrypoint.sh, reload-tls.sh and service-user.sh. Runs the
 # integration and migration tests against the coverage image, then merges the
 # kcov data of all containers and processes.
 #

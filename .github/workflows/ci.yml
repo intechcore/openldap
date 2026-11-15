@@ -98,7 +98,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: ./tests/integration/test-migration.sh openldap:test
 
-  # Line coverage of entrypoint.sh and reload-tls.sh, and the SonarCloud
+  # Line coverage of entrypoint.sh, reload-tls.sh and service-user.sh, and the SonarCloud
   # analysis. The integration and migration tests run against the coverage
   # stage of the Dockerfile, which traces both scripts with kcov.
   sonar:

@@ -42,7 +42,7 @@ contract:
 	./tests/contract.sh
 
 lint: contract
-	shellcheck entrypoint.sh reload-tls.sh tests/*.sh tests/coverage/*.sh tests/integration/*.sh .github/scripts/*.sh
+	shellcheck entrypoint.sh reload-tls.sh service-user.sh tests/*.sh tests/coverage/*.sh tests/integration/*.sh .github/scripts/*.sh
 	docker run --rm -i $(HADOLINT_IMAGE) < Dockerfile
 
 scan: build

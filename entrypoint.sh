@@ -25,6 +25,9 @@ LDAP_READONLY_USER_PASSWORD="${LDAP_READONLY_USER_PASSWORD:-readonly}"
 LDAP_READONLY_PW_USER="${LDAP_READONLY_PW_USER:-false}"
 LDAP_READONLY_PW_USERNAME="${LDAP_READONLY_PW_USERNAME:-readpw}"
 LDAP_READONLY_PW_PASSWORD="${LDAP_READONLY_PW_PASSWORD:-readpw}"
+# Service account with scoped write access, created by ldap-service-user on
+# first boot. The LDAP_SERVICE_USER_* variables are read by that command.
+LDAP_SERVICE_USER="${LDAP_SERVICE_USER:-false}"
 # Overlays enabled by default for osixia parity. memberof maintains the reverse
 # memberOf attribute; refint keeps DN references consistent on delete/rename.
 # Both are configured exactly as osixia did (groupOfUniqueNames / uniqueMember).
@@ -450,6 +453,18 @@ EOF
             || log "  (some entries in $f already existed and were skipped)"
     done
 
+    # Service account and its ACL rules. Runs after the data so the rules land
+    # in front of the default ones, exactly as on a running server.
+    if [ "$LDAP_SERVICE_USER" = "true" ]; then
+        LDAPI_URL="$boot_ldapi" LDAP_ADMIN_PASSWORD="$LDAP_ADMIN_PASSWORD" \
+            LDAP_CONFIG_PASSWORD="$LDAP_CONFIG_PASSWORD" ldap-service-user \
+            || { log "ERROR: cannot set up the service user"; stop_boot_slapd; discard_bootstrap; exit 1; }
+    fi
+
+    stop_boot_slapd
+}
+
+stop_boot_slapd() {
     log "Stopping temporary slapd"
     pid="$(cat /run/slapd/slapd.pid 2>/dev/null || true)"
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
@@ -457,6 +472,14 @@ EOF
         [ -e /run/slapd/slapd.pid ] || break
         sleep 0.3
     done
+}
+
+# A failed first boot leaves a half-built cn=config. Without it the next start
+# bootstraps again instead of serving an incomplete setup. The data stays: it
+# may be a restored database, and the bootstrap LDIF skips existing entries.
+discard_bootstrap() {
+    log "Discarding the incomplete cn=config, the next start bootstraps again"
+    rm -rf "${CONFIG_DIR:?}/"*
 }
 
 # ─── TLS cert watcher ───────────────────────────────────────────────────────
