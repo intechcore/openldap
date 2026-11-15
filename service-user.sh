@@ -33,11 +33,13 @@ cfg_search() {
     ldapsearch -o ldif-wrap=no -LLL -x -H "$LDAPI_URL" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" "$@"
 }
 
-# "a b" -> "a,b". Every name must be a plain attribute name.
+# "a b" -> "a,b". Every name must be a plain attribute name. Attribute names
+# are case-insensitive: userPassword in any case is spelled userPassword.
 attr_list() {
     out=""
     for a in $1; do
         printf '%s' "$a" | grep -qE '^[A-Za-z][A-Za-z0-9-]*$' || die "invalid attribute name '$a'"
+        [ "$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]')" = "userpassword" ] && a=userPassword
         out="${out:+$out,}$a"
     done
     printf '%s' "$out"
@@ -56,9 +58,10 @@ SVC_DN="cn=$LDAP_SERVICE_USER_USERNAME,$BASE"
 WHO="dn.exact=\"$SVC_DN\""
 
 # Current rules without the {n} index and without the rules of this account.
+# DNs are case-insensitive, so are the rules of svc and SVC.
 current=$(cfg_search -b "$DB_DN" -s base olcAccess) || die "cannot read the olcAccess rules of $DB_DN"
 printf '%s\n' "$current" | grep -q '^olcAccess::' && die "a base64 olcAccess value is not supported, edit the rules by hand"
-others=$(printf '%s\n' "$current" | sed -n 's/^olcAccess: {[0-9]*}//p' | grep -vF "$WHO" || true)
+others=$(printf '%s\n' "$current" | sed -n 's/^olcAccess: {[0-9]*}//p' | grep -viF "$WHO" || true)
 
 rules=""
 add_rule() { rules="$rules$1
@@ -90,7 +93,8 @@ if [ "$LDAP_SERVICE_USER" = "true" ]; then
     esac
     [ -n "$manage" ] && add_rule "to $SCOPE attrs=$manage by $WHO manage by * break"
     [ -n "$write" ] && add_rule "to $SCOPE attrs=$write by $WHO write by * break"
-    add_rule "to attrs=userPassword,shadowLastChange by $WHO none by * break"
+    # pwdHistory holds the previous password hashes.
+    add_rule "to attrs=userPassword,shadowLastChange,pwdHistory by $WHO none by * break"
     add_rule "to * by $WHO read by * break"
 fi
 
@@ -103,14 +107,20 @@ ldif="dn: $DB_DN
 replace: olcAccess
 $values"
 
-account_exists() {
-    ldapsearch -LLL -x -H "$LDAPI_URL" -D "cn=admin,$BASE" -w "$LDAP_ADMIN_PASSWORD" \
-        -b "$SVC_DN" -s base dn >/dev/null 2>&1
-}
+# Looked up before any change: a failed search, such as a wrong admin
+# password, stops here instead of passing for a missing account.
+rc=0
+ldapsearch -LLL -x -H "$LDAPI_URL" -D "cn=admin,$BASE" -w "$LDAP_ADMIN_PASSWORD" \
+    -b "$SVC_DN" -s base dn >/dev/null 2>&1 || rc=$?
+case "$rc" in
+    0) exists=true ;;
+    32) exists=false ;;
+    *) die "cannot look up $SVC_DN (ldapsearch exit $rc), check LDAP_ADMIN_PASSWORD" ;;
+esac
 
 if [ "$LDAP_SERVICE_USER" = "true" ]; then
     hash="$(slappasswd -s "$LDAP_SERVICE_USER_PASSWORD")"
-    if account_exists; then
+    if $exists; then
         log "Updating the password of $SVC_DN"
         ldapmodify -x -H "$LDAPI_URL" -D "cn=admin,$BASE" -w "$LDAP_ADMIN_PASSWORD" >/dev/null <<EOF
 dn: $SVC_DN
@@ -134,7 +144,7 @@ fi
 log "Writing $(printf '%s' "$rules" | grep -c . || true) service rules in front of $(printf '%s\n' "$others" | grep -c . || true) other rules"
 printf '%s\n' "$ldif" | ldapmodify -x -H "$LDAPI_URL" -D "cn=admin,cn=config" -w "$LDAP_CONFIG_PASSWORD" >/dev/null
 
-if [ "$LDAP_SERVICE_USER" != "true" ] && account_exists; then
+if [ "$LDAP_SERVICE_USER" != "true" ] && $exists; then
     log "Removing $SVC_DN"
     ldapdelete -x -H "$LDAPI_URL" -D "cn=admin,$BASE" -w "$LDAP_ADMIN_PASSWORD" "$SVC_DN"
 fi

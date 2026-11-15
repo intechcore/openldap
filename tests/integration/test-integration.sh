@@ -31,7 +31,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=91
+TOTAL=93
 
 # Standalone containers spun up by the configuration-variant tests.
 # Opt-in coverage mode, used by tests/coverage.sh: COVERAGE_DIR is a host
@@ -66,7 +66,7 @@ rmc() {
     return 0
 }
 
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp openldap-tlsfiles openldap-uniqattr openldap-svcboot openldap-svcrun"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp openldap-tlsfiles openldap-uniqattr openldap-svcboot openldap-svcrun openldap-svcbad openldap-svcretry"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -1340,10 +1340,12 @@ SB_ADM_ATTRS="$(sv_attr openldap-svcboot "cn=bjones,$SV_PEOPLE" pwdReset)|$(sv_a
 # The rootdn may set a password from the history and one that fails the quality check.
 sv_setpw openldap-svcboot "cn=asmith,$SV_PEOPLE" "Reset-Passw0rd-1" | sv_mod openldap-svcboot "$SV_DN" "$SV_PW" && SB_HIST=true
 sv_setpw openldap-svcboot "cn=cmiller,$SV_PEOPLE" "short" | sv_mod openldap-svcboot "$SV_DN" "$SV_PW" && SB_SHORT=true
-if $SB_RESET && $SB_HIST && $SB_SHORT && [[ "$SB_SVC_ATTRS" == "$SB_ADM_ATTRS" && "$SB_SVC_ATTRS" == "|1" ]]; then
-    pass "reset binds; pwdReset and pwdHistory as for the rootdn ($SB_SVC_ATTRS); history and short password accepted"
+# pwdHistory holds the previous hashes: the account must not read it either.
+SB_SEES_HIST=$(docker exec openldap-svcboot ldapsearch -LLL -x -H "$LDAPI" -D "$SV_DN" -w "$SV_PW" -b "cn=asmith,$SV_PEOPLE" -s base pwdHistory 2>/dev/null | grep -c '^pwdHistory' || true)
+if $SB_RESET && $SB_HIST && $SB_SHORT && [[ "$SB_SVC_ATTRS" == "$SB_ADM_ATTRS" && "$SB_SVC_ATTRS" == "|1" && "$SB_SEES_HIST" == 0 ]]; then
+    pass "reset binds; pwdReset and pwdHistory as for the rootdn ($SB_SVC_ATTRS); history and short password accepted; pwdHistory not readable"
 else
-    fail "service user reset wrong (reset=$SB_RESET history=$SB_HIST short=$SB_SHORT svc='$SB_SVC_ATTRS' admin='$SB_ADM_ATTRS')"
+    fail "service user reset wrong (reset=$SB_RESET history=$SB_HIST short=$SB_SHORT svc='$SB_SVC_ATTRS' admin='$SB_ADM_ATTRS' sees-history=$SB_SEES_HIST)"
 fi
 
 echo "[82/$TOTAL] service user: reads and clears pwdAccountLockedTime"
@@ -1473,26 +1475,31 @@ else
 fi
 
 echo "[89/$TOTAL] ldap-service-user: LDAP_SERVICE_USER=false removes the rules and the account"
+SR_BADADMIN=false
+docker exec -e LDAP_SERVICE_USER=false -e LDAP_SERVICE_USER_USERNAME=svc -e LDAP_CONFIG_PASSWORD=config -e LDAP_ADMIN_PASSWORD=wrong \
+    openldap-svcrun ldap-service-user >/dev/null 2>&1 || SR_BADADMIN=true
+[[ "$(sv_acl openldap-svcrun)" == "$SR_ACL3" ]] || SR_BADADMIN=false
 SR_REMOVED=false
 docker exec -e LDAP_SERVICE_USER=false -e LDAP_SERVICE_USER_USERNAME=svc -e LDAP_CONFIG_PASSWORD=config -e LDAP_ADMIN_PASSWORD=admin \
     openldap-svcrun ldap-service-user >/dev/null 2>&1 && SR_REMOVED=true
 SR_ACL4=$(sv_acl openldap-svcrun)
 SR_GONE=$(docker exec openldap-svcrun ldapsearch -LLL -x -H "$LDAPI" -D "$SV_ADMIN" -w admin -b "$SV_DN" -s base dn 2>/dev/null | grep -c '^dn:' || true)
-if $SR_REMOVED && [[ "$SR_ACL4" == "$SR_BEFORE" && "$SR_GONE" == 0 ]]; then
-    pass "rules back to the original, account deleted"
+if $SR_BADADMIN && $SR_REMOVED && [[ "$SR_ACL4" == "$SR_BEFORE" && "$SR_GONE" == 0 ]]; then
+    pass "a wrong admin password changes nothing; then rules back to the original, account deleted"
 else
-    fail "removal wrong (ran=$SR_REMOVED rules='$SR_ACL4' account=$SR_GONE)"
+    fail "removal wrong (bad-admin-refused=$SR_BADADMIN ran=$SR_REMOVED rules='$SR_ACL4' account=$SR_GONE)"
 fi
 
 echo "[90/$TOTAL] ldap-service-user: invalid settings fail and leave the rules unchanged"
 SR_ACCEPTED=""
 for bad in "LDAP_SERVICE_USER_MANAGE_ATTRS=user;Password" "LDAP_SERVICE_USER_USERNAME=a,b" \
-        "LDAP_SERVICE_USER_SUBTREE=ou=x\"" "LDAP_SERVICE_USER_GROUPS=cn=a,,ou=b" "LDAP_CONFIG_PASSWORD=wrong"; do
+        "LDAP_SERVICE_USER_SUBTREE=ou=x\"" "LDAP_SERVICE_USER_GROUPS=cn=a,,ou=b" "LDAP_CONFIG_PASSWORD=wrong" \
+        "LDAP_ADMIN_PASSWORD=wrong"; do
     docker exec "${SV_ENV[@]}" -e LDAP_CONFIG_PASSWORD=config -e LDAP_ADMIN_PASSWORD=admin -e "$bad" \
         openldap-svcrun ldap-service-user >/dev/null 2>&1 && SR_ACCEPTED="$SR_ACCEPTED $bad"
 done
 if [[ -z "$SR_ACCEPTED" && "$(sv_acl openldap-svcrun)" == "$SR_BEFORE" ]]; then
-    pass "bad attribute, username, subtree, group and config password refused; rules unchanged"
+    pass "bad attribute, username, subtree, group, config and admin password refused; rules unchanged"
 else
     fail "invalid settings accepted:$SR_ACCEPTED"
 fi
@@ -1512,6 +1519,37 @@ if $SR_EMPTY_REFUSED && [[ "$SR_ONLY" == 6 && "$SR_STILL" == 6 ]]; then
     pass "removal refused while the service rules are the only ones"
 else
     fail "empty rule set not refused (refused=$SR_EMPTY_REFUSED before=$SR_ONLY after=$SR_STILL)"
+fi
+
+echo "[92/$TOTAL] service user: a failed first boot bootstraps again on the next start"
+docker volume rm -f openldap-svc-config openldap-svc-data >/dev/null 2>&1 || true
+SV_VOLS=(-v openldap-svc-config:/etc/ldap/slapd.d -v openldap-svc-data:/var/lib/ldap)
+rmc openldap-svcbad
+drun --name openldap-svcbad "${SV_VOLS[@]}" -e LDAP_DOMAIN=example.test -e LDAP_ADMIN_PASSWORD=admin \
+    -e LDAP_SERVICE_USER=true -e "LDAP_SERVICE_USER_MANAGE_ATTRS=bad;attr" "$IMAGE" >/dev/null 2>&1 \
+    && SV_BAD_RC=0 || SV_BAD_RC=$?
+SV_CFG_LEFT=$(docker run --rm -v openldap-svc-config:/c --entrypoint sh "$IMAGE" -c 'ls -A /c | wc -l' 2>/dev/null | tr -d ' ')
+rmc openldap-svcbad
+SV_RETRY=false
+sv_start openldap-svcretry "${SV_VOLS[@]}" "${SV_ENV[@]}" && sv_bind openldap-svcretry "$SV_DN" "$SV_PW" && SV_RETRY=true
+if [[ "$SV_BAD_RC" != 0 && "$SV_CFG_LEFT" == 0 ]] && $SV_RETRY; then
+    pass "bad setting stops the first boot and leaves no cn=config; the next start creates the account"
+else
+    fail "failed first boot not retryable (rc=$SV_BAD_RC config-entries=$SV_CFG_LEFT retry=$SV_RETRY)"
+fi
+
+echo "[93/$TOTAL] ldap-service-user: names in another case find the same account and attribute"
+docker exec "${SV_ENV[@]}" -e LDAP_SERVICE_USER_USERNAME=SVC -e "LDAP_SERVICE_USER_MANAGE_ATTRS=UserPassword pwdAccountLockedTime" \
+    -e LDAP_CONFIG_PASSWORD=config -e LDAP_ADMIN_PASSWORD=admin openldap-svcretry ldap-service-user >/dev/null 2>&1 || true
+SV_CASE_ACL=$(sv_acl openldap-svcretry)
+SV_CASE_SVC=$(echo "$SV_CASE_ACL" | grep -ci 'cn=svc,' || true)
+SV_CASE_HASH=$(docker exec openldap-svcretry ldapsearch -LLL -x -H "$LDAPI" -D "$SV_DN" -w "$SV_PW" -b "$SV_PEOPLE" '(userPassword=*)' userPassword 2>/dev/null | grep -c '^userPassword' || true)
+rmc openldap-svcretry
+docker volume rm -f openldap-svc-config openldap-svc-data >/dev/null 2>&1 || true
+if [[ "$SV_CASE_SVC" == 6 && "$SV_CASE_HASH" == 0 ]] && echo "$SV_CASE_ACL" | grep -q 'attrs=userPassword by dn.exact="cn=SVC,dc=example,dc=test" =mw'; then
+    pass "SVC replaces the 6 rules of svc; UserPassword still gets =mw, no hash readable"
+else
+    fail "case handling wrong (service rules=$SV_CASE_SVC hashes=$SV_CASE_HASH rules='$SV_CASE_ACL')"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

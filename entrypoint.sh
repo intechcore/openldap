@@ -458,9 +458,13 @@ EOF
     if [ "$LDAP_SERVICE_USER" = "true" ]; then
         LDAPI_URL="$boot_ldapi" LDAP_ADMIN_PASSWORD="$LDAP_ADMIN_PASSWORD" \
             LDAP_CONFIG_PASSWORD="$LDAP_CONFIG_PASSWORD" ldap-service-user \
-            || { log "ERROR: cannot set up the service user"; exit 1; }
+            || { log "ERROR: cannot set up the service user"; stop_boot_slapd; discard_bootstrap; exit 1; }
     fi
 
+    stop_boot_slapd
+}
+
+stop_boot_slapd() {
     log "Stopping temporary slapd"
     pid="$(cat /run/slapd/slapd.pid 2>/dev/null || true)"
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
@@ -468,6 +472,14 @@ EOF
         [ -e /run/slapd/slapd.pid ] || break
         sleep 0.3
     done
+}
+
+# A failed first boot leaves a half-built cn=config. Without it the next start
+# bootstraps again instead of serving an incomplete setup. The data stays: it
+# may be a restored database, and the bootstrap LDIF skips existing entries.
+discard_bootstrap() {
+    log "Discarding the incomplete cn=config, the next start bootstraps again"
+    rm -rf "${CONFIG_DIR:?}/"*
 }
 
 # ─── TLS cert watcher ───────────────────────────────────────────────────────
