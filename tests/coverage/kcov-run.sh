@@ -1,5 +1,5 @@
 #!/bin/sh
-# Coverage image only. Replaces docker-entrypoint.sh, reload-tls and ldap-service-user, and runs
+# Coverage image only. Replaces docker-entrypoint.sh and the commands of the image, and runs
 # the original script under kcov. Each process writes into its own directory
 # below /cov, since several containers and processes share the mount.
 # kcov records up to the final exec and writes its report when the traced
@@ -10,6 +10,7 @@ case "$(basename "$0")" in
     docker-entrypoint.sh) script=/opt/coverage/entrypoint.sh ;;
     reload-tls) script=/opt/coverage/reload-tls.sh ;;
     ldap-service-user) script=/opt/coverage/service-user.sh ;;
+    ldap-hide-pwdhistory) script=/opt/coverage/hide-pwdhistory.sh ;;
     *) echo "kcov-run: unknown script $0" >&2; exit 1 ;;
 esac
 

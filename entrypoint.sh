@@ -228,6 +228,10 @@ index cn,sn,uid,mail eq,sub
 index uidNumber,gidNumber,memberUid eq
 index member eq
 
+# pwdHistory holds the hashes of the previous passwords. Nobody reads it, the
+# rootdn bypasses ACLs and ppolicy checks the history internally.
+access to attrs=pwdHistory
+  by * none
 access to attrs=userPassword,shadowLastChange
   by self write
   by anonymous auth$pw_read

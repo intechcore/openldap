@@ -31,7 +31,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=94
+TOTAL=98
 
 # Standalone containers spun up by the configuration-variant tests.
 # Opt-in coverage mode, used by tests/coverage.sh: COVERAGE_DIR is a host
@@ -66,7 +66,7 @@ rmc() {
     return 0
 }
 
-EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp openldap-tlsfiles openldap-uniqattr openldap-svcboot openldap-svcrun openldap-svcbad openldap-svcretry"
+EXTRA_CONTAINERS="openldap-notls openldap-domain openldap-basedn openldap-mtls openldap-cca openldap-loctz openldap-nolb openldap-nouniq openldap-argon2 openldap-bis openldap-bksrc openldap-cipher openldap-misc openldap-pwexp openldap-tlsfiles openldap-uniqattr openldap-svcboot openldap-svcrun openldap-svcbad openldap-svcretry openldap-pwdhist"
 cleanup() {
     echo ""
     echo "--- Cleanup ---"
@@ -1309,13 +1309,14 @@ sv_rules() { sv_acl "$1" | sed 's/^{[0-9]*}//'; }
 sv_setpw() { printf 'dn: %s\nchangetype: modify\nreplace: userPassword\nuserPassword: %s\n' "$2" "$3"; }
 
 echo "[79/$TOTAL] service user: created on first boot, its rules in front of the default ones"
+# The default rules: pwdHistory, userPassword, everything else.
 SB_OK=false; sv_start openldap-svcboot "${SV_ENV[@]}" && SB_OK=true
 SB_ACL=$(sv_acl openldap-svcboot)
 SB_FIRST=$(echo "$SB_ACL" | head -6 | grep -c 'dn.exact="cn=svc,dc=example,dc=test"' || true)
-SB_LAST=$(echo "$SB_ACL" | tail -2 | grep -c 'cn=svc' || true)
+SB_LAST=$(echo "$SB_ACL" | tail -3 | grep -c 'cn=svc' || true)
 if $SB_OK && sv_bind openldap-svcboot "$SV_DN" "$SV_PW" && [[ "$SB_FIRST" == 6 && "$SB_LAST" == 0 ]] \
-        && [[ $(echo "$SB_ACL" | wc -l) -eq 8 ]]; then
-    pass "svc binds; 6 service rules, then the 2 default rules"
+        && [[ $(echo "$SB_ACL" | wc -l) -eq 9 ]]; then
+    pass "svc binds; 6 service rules, then the 3 default rules"
 else
     fail "service user bootstrap wrong (ready=$SB_OK first=$SB_FIRST last=$SB_LAST rules='$SB_ACL')"
 fi
@@ -1561,10 +1562,73 @@ docker exec -e LDAP_SERVICE_USER=false -e LDAP_SERVICE_USER_USERNAME=svc -e LDAP
 SV_HAND_LEFT=$(sv_rules openldap-svcretry)
 rmc openldap-svcretry
 docker volume rm -f openldap-svc-config openldap-svc-data >/dev/null 2>&1 || true
-if [[ "$SV_HAND_RERUN" == 1 && "$(echo "$SV_HAND_LEFT" | grep -cxF "$SV_HAND")" == 1 && "$(echo "$SV_HAND_LEFT" | wc -l | tr -d ' ')" == 3 ]]; then
+if [[ "$SV_HAND_RERUN" == 1 && "$(echo "$SV_HAND_LEFT" | grep -cxF "$SV_HAND")" == 1 && "$(echo "$SV_HAND_LEFT" | wc -l | tr -d ' ')" == 4 ]]; then
     pass "the shared rule survives a rerun and the removal; only the service rules go"
 else
     fail "hand-written rule lost (after rerun=$SV_HAND_RERUN rules='$SV_HAND_LEFT')"
+fi
+
+# ── pwdHistory is hidden (ldap-hide-pwdhistory) ─────────────────────────────
+PH_USER="cn=hhill,${SV_PEOPLE}"
+PH_RULE='to attrs=pwdHistory by * none'
+ph_hist() { docker exec openldap-pwdhist ldapsearch -LLL -o ldif-wrap=no -x -H "$LDAPI" -D "$1" -w "$2" -b "$PH_USER" -s base pwdHistory 2>/dev/null | grep -c '^pwdHistory' || true; }
+ph_run() { docker exec -e LDAP_CONFIG_PASSWORD="${1:-config}" -e LDAP_ADMIN_PASSWORD=admin openldap-pwdhist ldap-hide-pwdhistory >/dev/null 2>&1; }
+
+echo "[95/$TOTAL] pwdHistory: hidden from every account but the rootdn, the history still applies"
+PH_OK=false; sv_start openldap-pwdhist -e LDAP_READONLY_PW_USER=true -e LDAP_READONLY_PW_PASSWORD=readpwpw && PH_OK=true
+sv_setpw openldap-pwdhist "$PH_USER" "Hist-Passw0rd-1" | sv_mod openldap-pwdhist "$PH_USER" "$USER_PW" || true
+sv_setpw openldap-pwdhist "$PH_USER" "Hist-Passw0rd-2" | sv_mod openldap-pwdhist "$PH_USER" "Hist-Passw0rd-1" || true
+PH_ADMIN=$(ph_hist "$SV_ADMIN" admin)
+PH_RO=$(ph_hist "cn=readonly,${SV_BASE}" ropw)
+PH_RPW=$(ph_hist "cn=readpw,${SV_BASE}" readpwpw)
+PH_SELF=$(ph_hist "$PH_USER" "Hist-Passw0rd-2")
+PH_REUSE_REFUSED=false
+sv_setpw openldap-pwdhist "$PH_USER" "Hist-Passw0rd-1" | sv_mod openldap-pwdhist "$PH_USER" "Hist-Passw0rd-2" || PH_REUSE_REFUSED=true
+if $PH_OK && $PH_REUSE_REFUSED && [[ "$PH_ADMIN" -ge 2 && "$PH_RO" == 0 && "$PH_RPW" == 0 && "$PH_SELF" == 0 ]] \
+        && sv_rules openldap-pwdhist | head -1 | tr -s ' ' | grep -qxF "$PH_RULE"; then
+    pass "rootdn sees $PH_ADMIN history values; readonly, readpw and the user none; a password from the history refused"
+else
+    fail "pwdHistory exposed or history broken (admin=$PH_ADMIN readonly=$PH_RO readpw=$PH_RPW self=$PH_SELF reuse-refused=$PH_REUSE_REFUSED)"
+fi
+
+echo "[96/$TOTAL] ldap-hide-pwdhistory: on a server bootstrapped with the rule, it changes nothing"
+PH_FRESH=$(sv_rules openldap-pwdhist)
+PH_FRESH_RAN=false; ph_run && PH_FRESH_RAN=true
+if $PH_FRESH_RAN && [[ "$(sv_rules openldap-pwdhist)" == "$PH_FRESH" ]]; then
+    pass "the first-boot rule is recognized, no duplicate"
+else
+    fail "duplicate or changed rules on a fresh server (rules='$(sv_rules openldap-pwdhist)')"
+fi
+
+echo "[97/$TOTAL] ldap-hide-pwdhistory: hides the history on a server with the old rules, a rerun changes nothing"
+# The rules of an older image: no pwdHistory rule.
+printf 'dn: olcDatabase={1}mdb,cn=config\nchangetype: modify\ndelete: olcAccess\nolcAccess: {0}\n' \
+    | sv_mod openldap-pwdhist cn=admin,cn=config config || true
+PH_OLD_RULES=$(sv_rules openldap-pwdhist)
+PH_OLD_RO=$(ph_hist "cn=readonly,${SV_BASE}" ropw)
+PH_RAN=false; ph_run && PH_RAN=true
+PH_NEW_RULES=$(sv_rules openldap-pwdhist)
+PH_NEW_RO=$(ph_hist "cn=readonly,${SV_BASE}" ropw)
+ph_run || true
+PH_RERUN_RULES=$(sv_rules openldap-pwdhist)
+if [[ "$PH_OLD_RO" -ge 2 ]] && $PH_RAN && [[ "$PH_NEW_RO" == 0 && "$PH_RERUN_RULES" == "$PH_NEW_RULES" ]] \
+        && [[ "$PH_NEW_RULES" == "$(printf '%s\n%s' "$PH_RULE" "$PH_OLD_RULES")" ]]; then
+    pass "readonly saw $PH_OLD_RO values, then none; the rule added in front of the old ones, once"
+else
+    fail "hide on a running server wrong (before=$PH_OLD_RO ran=$PH_RAN after=$PH_NEW_RO rules='$PH_NEW_RULES')"
+fi
+
+echo "[98/$TOTAL] ldap-hide-pwdhistory: a wrong config password fails and changes nothing"
+printf 'dn: olcDatabase={1}mdb,cn=config\nchangetype: modify\ndelete: olcAccess\nolcAccess: {0}\n' \
+    | sv_mod openldap-pwdhist cn=admin,cn=config config || true
+PH_BEFORE=$(sv_rules openldap-pwdhist)
+PH_BAD_REFUSED=false; ph_run wrong || PH_BAD_REFUSED=true
+PH_AFTER=$(sv_rules openldap-pwdhist)
+rmc openldap-pwdhist
+if $PH_BAD_REFUSED && [[ "$PH_AFTER" == "$PH_BEFORE" ]]; then
+    pass "refused; rules unchanged"
+else
+    fail "wrong config password accepted (refused=$PH_BAD_REFUSED)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
