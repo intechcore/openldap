@@ -26,6 +26,10 @@ LDAP_SERVICE_USER_MANAGE_ATTRS="${LDAP_SERVICE_USER_MANAGE_ATTRS:-}"
 LDAP_SERVICE_USER_WRITE_ATTRS="${LDAP_SERVICE_USER_WRITE_ATTRS:-}"
 LDAP_SERVICE_USER_GROUPS="${LDAP_SERVICE_USER_GROUPS:-}"
 
+# A relative DN in plain ASCII. slapd returns a non-ASCII rule in base64, which
+# this command cannot read back.
+DN_RE='^[A-Za-z]+=[A-Za-z0-9 ._-]+(,[A-Za-z]+=[A-Za-z0-9 ._-]+)*$'
+
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [ldap-service-user] $1"; }
 die() { log "ERROR: $1"; exit 1; }
 
@@ -58,24 +62,28 @@ SVC_DN="cn=$LDAP_SERVICE_USER_USERNAME,$BASE"
 WHO="dn.exact=\"$SVC_DN\""
 
 # Current rules without the {n} index and without the rules of this account.
-# DNs are case-insensitive, so are the rules of svc and SVC.
+# A rule of this account has exactly the shape written below: one "by" clause
+# for the account, then "by * break". A hand-written rule that also names the
+# account stays. DNs are case-insensitive, so are the rules of svc and SVC.
+WHO_RE=$(printf '%s' "$WHO" | sed 's/[][\.*^$/]/\\&/g')
+OWN_RE="^to .* by $WHO_RE (=mw|=w|write|manage|read|none) by \\* break\$"
 current=$(cfg_search -b "$DB_DN" -s base olcAccess) || die "cannot read the olcAccess rules of $DB_DN"
 printf '%s\n' "$current" | grep -q '^olcAccess::' && die "a base64 olcAccess value is not supported, edit the rules by hand"
-others=$(printf '%s\n' "$current" | sed -n 's/^olcAccess: {[0-9]*}//p' | grep -viF "$WHO" || true)
+others=$(printf '%s\n' "$current" | sed -n 's/^olcAccess: {[0-9]*}//p' | grep -viE "$OWN_RE" || true)
 
 rules=""
 add_rule() { rules="$rules$1
 "; }
 
 if [ "$LDAP_SERVICE_USER" = "true" ]; then
-    printf '%s' "$LDAP_SERVICE_USER_SUBTREE" | grep -qE '^[A-Za-z]+=[^,"]+(,[A-Za-z]+=[^,"]+)*$' \
+    printf '%s' "$LDAP_SERVICE_USER_SUBTREE" | grep -qE "$DN_RE" \
         || die "invalid LDAP_SERVICE_USER_SUBTREE '$LDAP_SERVICE_USER_SUBTREE'"
     SCOPE="dn.subtree=\"$LDAP_SERVICE_USER_SUBTREE,$BASE\""
     manage=$(attr_list "$LDAP_SERVICE_USER_MANAGE_ATTRS")
     write=$(attr_list "$LDAP_SERVICE_USER_WRITE_ATTRS")
 
     for g in $LDAP_SERVICE_USER_GROUPS; do
-        printf '%s' "$g" | grep -qE '^[A-Za-z]+=[^,"]+(,[A-Za-z]+=[^,"]+)*$' || die "invalid group '$g'"
+        printf '%s' "$g" | grep -qE "$DN_RE" || die "invalid group '$g'"
         add_rule "to dn.exact=\"$g,$BASE\" attrs=uniqueMember by $WHO write by * break"
     done
     # The levels manage and write include read. userPassword gets the bare

@@ -31,7 +31,7 @@ LDAPI="ldapi://%2Frun%2Fslapd%2Fldapi"
 
 PASS=0
 FAIL=0
-TOTAL=93
+TOTAL=94
 
 # Standalone containers spun up by the configuration-variant tests.
 # Opt-in coverage mode, used by tests/coverage.sh: COVERAGE_DIR is a host
@@ -1493,13 +1493,13 @@ fi
 echo "[90/$TOTAL] ldap-service-user: invalid settings fail and leave the rules unchanged"
 SR_ACCEPTED=""
 for bad in "LDAP_SERVICE_USER_MANAGE_ATTRS=user;Password" "LDAP_SERVICE_USER_USERNAME=a,b" \
-        "LDAP_SERVICE_USER_SUBTREE=ou=x\"" "LDAP_SERVICE_USER_GROUPS=cn=a,,ou=b" "LDAP_CONFIG_PASSWORD=wrong" \
+        "LDAP_SERVICE_USER_SUBTREE=ou=x\"" "LDAP_SERVICE_USER_SUBTREE=ou=équipe" "LDAP_SERVICE_USER_GROUPS=cn=a,,ou=b" "LDAP_CONFIG_PASSWORD=wrong" \
         "LDAP_ADMIN_PASSWORD=wrong"; do
     docker exec "${SV_ENV[@]}" -e LDAP_CONFIG_PASSWORD=config -e LDAP_ADMIN_PASSWORD=admin -e "$bad" \
         openldap-svcrun ldap-service-user >/dev/null 2>&1 && SR_ACCEPTED="$SR_ACCEPTED $bad"
 done
 if [[ -z "$SR_ACCEPTED" && "$(sv_acl openldap-svcrun)" == "$SR_BEFORE" ]]; then
-    pass "bad attribute, username, subtree, group, config and admin password refused; rules unchanged"
+    pass "bad attribute, username, subtree, non-ASCII subtree, group, config and admin password refused; rules unchanged"
 else
     fail "invalid settings accepted:$SR_ACCEPTED"
 fi
@@ -1544,12 +1544,27 @@ docker exec "${SV_ENV[@]}" -e LDAP_SERVICE_USER_USERNAME=SVC -e "LDAP_SERVICE_US
 SV_CASE_ACL=$(sv_acl openldap-svcretry)
 SV_CASE_SVC=$(echo "$SV_CASE_ACL" | grep -ci 'cn=svc,' || true)
 SV_CASE_HASH=$(docker exec openldap-svcretry ldapsearch -LLL -x -H "$LDAPI" -D "$SV_DN" -w "$SV_PW" -b "$SV_PEOPLE" '(userPassword=*)' userPassword 2>/dev/null | grep -c '^userPassword' || true)
-rmc openldap-svcretry
-docker volume rm -f openldap-svc-config openldap-svc-data >/dev/null 2>&1 || true
 if [[ "$SV_CASE_SVC" == 6 && "$SV_CASE_HASH" == 0 ]] && echo "$SV_CASE_ACL" | grep -q 'attrs=userPassword by dn.exact="cn=SVC,dc=example,dc=test" =mw'; then
     pass "SVC replaces the 6 rules of svc; UserPassword still gets =mw, no hash readable"
 else
     fail "case handling wrong (service rules=$SV_CASE_SVC hashes=$SV_CASE_HASH rules='$SV_CASE_ACL')"
+fi
+
+echo "[94/$TOTAL] ldap-service-user: a hand-written rule that also names the account stays"
+SV_HAND='to dn.base="cn=testers,ou=groups,dc=example,dc=test" by dn.exact="cn=svc,dc=example,dc=test" read by dn.exact="cn=readonly,dc=example,dc=test" read by * break'
+printf 'dn: olcDatabase={1}mdb,cn=config\nchangetype: modify\nadd: olcAccess\nolcAccess: {0}%s\n' "$SV_HAND" \
+    | sv_mod openldap-svcretry cn=admin,cn=config config || true
+docker exec "${SV_ENV[@]}" -e LDAP_CONFIG_PASSWORD=config -e LDAP_ADMIN_PASSWORD=admin openldap-svcretry ldap-service-user >/dev/null 2>&1 || true
+SV_HAND_RERUN=$(sv_rules openldap-svcretry | grep -cxF "$SV_HAND" || true)
+docker exec -e LDAP_SERVICE_USER=false -e LDAP_SERVICE_USER_USERNAME=svc -e LDAP_CONFIG_PASSWORD=config -e LDAP_ADMIN_PASSWORD=admin \
+    openldap-svcretry ldap-service-user >/dev/null 2>&1 || true
+SV_HAND_LEFT=$(sv_rules openldap-svcretry)
+rmc openldap-svcretry
+docker volume rm -f openldap-svc-config openldap-svc-data >/dev/null 2>&1 || true
+if [[ "$SV_HAND_RERUN" == 1 && "$(echo "$SV_HAND_LEFT" | grep -cxF "$SV_HAND")" == 1 && "$(echo "$SV_HAND_LEFT" | wc -l | tr -d ' ')" == 3 ]]; then
+    pass "the shared rule survives a rerun and the removal; only the service rules go"
+else
+    fail "hand-written rule lost (after rerun=$SV_HAND_RERUN rules='$SV_HAND_LEFT')"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
